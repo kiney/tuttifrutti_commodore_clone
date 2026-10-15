@@ -1,1023 +1,1023 @@
 """
 Executive Summary
 =================
-Dies ist eine lesbare Rekonstruktion von tuttifrutti.prg, an Python angelehnt.
-Die Spiellogik läuft in einem Raster-Interrupt. Es gibt sechs Karten, drei
-wiederkehrende Regelvarianten, höchstens fünf gleichzeitig aktive Gegner,
-einen abprallenden Schuss und zwei Arten beweglicher Blöcke.
+This is a readable, Python-inspired reconstruction of tuttifrutti.prg.
+The game logic runs in a raster interrupt. There are six maps, three recurring
+rule variants, at most five simultaneously active enemies, a bouncing shot,
+and two kinds of moving blocks.
 
-LESEREIHENFOLGE
-1. Datenmodell und Begriffe
-2. start() -> bild_tick() -> spiele_einen_tick()
-3. Bewegung, Karte, Schuss, Gegner, Blöcke
-4. Levelziele, Punkte, Tod, Darstellung und Musik
-5. Grenzen der Rekonstruktion
+READING ORDER
+1. Data model and terminology
+2. start() -> frame_tick() -> play_one_tick()
+3. Movement, map, shot, enemies and blocks
+4. Level goals, score, death, rendering and music
+5. Limits of the reconstruction
 
-Das ist KEIN ausführbares Python-Spiel. Objekte wie `spiel`, `spieler`,
-`karte`, `bildschirm` und `ton` stehen für zusammengefasste Speicherstellen.
-Zuweisungen an diese Objekte bedeuten Änderungen des Originalzustands.
-Benannte Zeichen-, Grafik- und Tonoperationen sind erklärende Abstraktionen.
-Die Funktionsnamen sind von mir vergeben; Originalnamen sind nicht erhalten.
+This is NOT an executable Python game. Objects such as `game`, `player`,
+`map`, `screen` and `audio` group related memory locations. Assignments to these
+objects represent changes to the original state. Named character, graphics and
+sound operations are explanatory abstractions. The function names were assigned
+during analysis; the original names have not survived.
 
-Quellenbasis: ausschließlich die konkrete PRG-Datei in diesem Repository.
+Source: exclusively the specific PRG file in this repository.
 SHA-256: 63ba58701faf770d0305214e5a0aed384e9c92b6fd8afa70377e7ed2645955e7
-$1234 bedeutet eine hexadezimale ORIGINAL-SPEICHERADRESSE, keine Zeilennummer.
-Die vollständiger nachverfolgbare Befehlsfolge steht in analysis/disassembly.txt.
+$1234 denotes an ORIGINAL MEMORY ADDRESS in hexadecimal, not a line number.
+The more directly traceable instruction sequence is in analysis/disassembly.txt.
 
-Genauigkeit:
-  BELEGT        = aus Befehlen, Zugriffen und Daten unmittelbar abgeleitet.
-  VEREINFACHT   = gleiche Idee mit verständlicherer Datenstruktur beschrieben;
-                 Randfälle des 8-Bit-Rechnens müssen nicht identisch sein.
-  INTERPRETIERT = Bedeutung/Name aus Nutzung oder Grafik erschlossen.
-  OFFEN         = auffälliger Ablauf, dessen reale Wirkung nicht geklärt ist.
+Confidence labels:
+  VERIFIED   = directly derived from instructions, memory accesses and data.
+  SIMPLIFIED = the same idea expressed with a clearer data structure;
+               8-bit arithmetic edge cases need not be identical.
+  INFERRED   = meaning/name inferred from usage or graphics.
+  OPEN       = unusual behavior whose actual effect remains unresolved.
 
-Wichtige Vereinfachung: Das Original nutzt auch die Zeichen auf dem Bildschirm
-als Zahlenspeicher! `spiel.punkte`, `spiel.leben`, `spiel.bonus` und die Uhr
-sind hier lesbare Stellvertreter für diese Zeichen.
+Important simplification: the original also uses screen characters as numeric
+storage! `game.score`, `game.lives`, `game.bonus` and the clock below are readable
+stand-ins for those characters.
 """
 
 
 # ---------------------------------------------------------------------------
-# 1. DATENMODELL UND BEGRIFFE
+# 1. DATA MODEL AND TERMINOLOGY
 # ---------------------------------------------------------------------------
 
-BREITE = 16                         # Karte: 16 × 12 logische Felder
-HOEHE = 12
-EINHEITEN_PRO_FELD = 8              # Interne Bewegungseinheiten, NICHT Pixel.
-# Ein Kartenfeld wird mit 2 × 2 Bildschirmzeichen dargestellt, also 16 × 16 Pixel.
-# Eine interne Bewegungseinheit entspricht deshalb 2 Bildschirmpixeln.
+WIDTH = 16                         # Map: 16 × 12 logical tiles.
+HEIGHT = 12
+UNITS_PER_TILE = 8              # Internal movement units, NOT pixels.
+# One map tile uses 2 × 2 screen characters, or 16 × 16 pixels.
+# One internal movement unit therefore equals 2 screen pixels.
 
-LEER = 0
-ERDE = 1
-KIRSCHE = 2
-APFEL = 3                          # Fester/fallender Apfel; blockiert Gehen.
-KIRSCHBLOCK = 4                     # Schiebbar; bei Hindernis zerbrechbar.
-APFELBLOCK = 5                      # Schiebbar; zerbricht nicht beim Schieben.
-WAND_6 = 6                         # Feste Sperre, eigene Farbe.
-WAND_7 = 7                         # Weitere feste Sperre; siehe Zielprüfung.
-AUSSERHALB = 15                    # Rückgabe des Kartenlesers außerhalb.
-# Die Bezeichnungen von 1, 3, 4, 5 sind aus Funktion und Zeichengrafik erschlossen.
-# Insbesondere WAND_7 nicht unbelegt als "unsichtbare Wand" voraussetzen.
+EMPTY = 0
+EARTH = 1
+CHERRY = 2
+APPLE = 3                          # Stationary/falling apple; blocks walking.
+CHERRY_BLOCK = 4                     # Pushable; breaks when obstructed.
+APPLE_BLOCK = 5                      # Pushable; does not break when pushed.
+WALL_6 = 6                         # Fixed barrier with its own color.
+WALL_7 = 7                         # Another fixed barrier; see goal checks.
+OUTSIDE = 15                    # Returned by the map reader outside the map.
+# Names for types 1, 3, 4 and 5 are inferred from behavior and graphics.
+# In particular, do not assume WALL_7 is an "invisible wall" without evidence.
 
-LINKS, RECHTS, OBEN, UNTEN = 0, 1, 2, 3
-SCHRITT = {LINKS: (-1, 0), RECHTS: (1, 0), OBEN: (0, -1), UNTEN: (0, 1)}
-GEGENRICHTUNG = {LINKS: RECHTS, RECHTS: LINKS, OBEN: UNTEN, UNTEN: OBEN}
-RICHTUNGSBIT = {LINKS: 4, RECHTS: 8, OBEN: 1, UNTEN: 2}  # $3EF4, $3EF8, $3EFC
+LEFT, RIGHT, UP, DOWN = 0, 1, 2, 3
+STEP = {LEFT: (-1, 0), RIGHT: (1, 0), UP: (0, -1), DOWN: (0, 1)}
+OPPOSITE = {LEFT: RIGHT, RIGHT: LEFT, UP: DOWN, DOWN: UP}
+DIRECTION_BIT = {LEFT: 4, RIGHT: 8, UP: 1, DOWN: 2}  # $3EF4, $3EF8, $3EFC
 
-# Das Original kombiniert eine Richtungsnummer mit einem Stopp-Bit:
-#   $00..$03: aktiv in diese Richtung laufen
-#   $80..$83: stehen bleiben, aber Blickrichtung behalten
-#   $FF:      Figur inaktiv
-# Im Pseudocode trennen wir das in richtung, steht und aktiv.
+# The original combines a direction number with a stop bit:
+#   $00..$03: move actively in this direction
+#   $80..$83: stop while retaining the facing direction
+#   $FF:      inactive figure
+# The pseudocode separates these into direction, stopped and active.
 
-# `spiel` bündelt:
-#   modus             $E2: 0=Startbild; 1,3,5=Übergang; 2,4,6=Spiel; 7=Game Over
-#                     Zusätzlich markiert Bit 7 ($80) den Todesablauf.
-#   tick              $E7: laufender 8-Bit-Bildzähler, läuft nach 255 auf 0 über
-#   uebergang         $E6: Warte-/Musikzähler beim Start und Levelwechsel
-#   karten_index      $E5: 0..5, Auswahl einer der sechs Spielkarten
-#   schwierigkeitsstufe $B6: wächst auch nach Wiederholung der Karten weiter
-#   tod_pause $90: Countdown für Tod bzw. Game Over
-#   punkte            fünf Ziffern in $0C4A..$0C4E
-#   leben             eine Ziffer in $0DB6
-#   bonus             drei Ziffern in $0D3A..$0D3C
-#   levelnummer       zwei Ziffern in $0E2A..$0E2B
-#   uhr               Zeichen in $0CC2..$0CC7, Teiltakt in $B5
-#   nachschub         $8C: noch nicht eingeplante zusätzliche Gegner
-#   gegner_tempo      $88: Zuwachs für einen 8-Bit-Taktakkumulator
-#   gegner_takt       $87: dessen aktueller Wert
-#   bonus_halbtakt    $B4: Bonus sinkt bei jedem zweiten Gegner-Bewegungstakt
-#   zufallszustand    $89..$8B: drei Bytes
-#   highscore_platz   $B7: 0..7 oder 8=noch kein Platz
+# `game` groups the following state:
+#   mode              $E2: 0=title; 1,3,5=transition; 2,4,6=playing; 7=game over
+#                     Bit 7 ($80) additionally marks the death sequence.
+#   tick              $E7: running 8-bit frame counter, wraps from 255 to 0
+#   transition        $E6: wait/music counter at startup and round transitions
+#   map_index         $E5: 0..5, selects one of the six playable maps
+#   difficulty_level  $B6: keeps increasing when the maps repeat
+#   death_pause       $90: countdown for death or game over
+#   score             five digits at $0C4A..$0C4E
+#   lives             one digit at $0DB6
+#   bonus             three digits at $0D3A..$0D3C
+#   round_number      two digits at $0E2A..$0E2B
+#   clock             characters at $0CC2..$0CC7, subtick at $B5
+#   reserves          $8C: additional enemies not yet scheduled to appear
+#   enemy_speed       $88: increment for an 8-bit timing accumulator
+#   enemy_clock       $87: current value of that accumulator
+#   bonus_half_tick   $B4: bonus decreases every second enemy movement tick
+#   random_state      $89..$8B: three bytes
+#   highscore_rank    $B7: 0..7, or 8=no rank yet
 
-# `spieler` ist Figur 0; Figuren 1..5 sind Gegner.
-# `figuren` und `gegner` bezeichnen unten dieselbe nach Originalindex geordnete
-# Tabelle; gegner[1:6] sind die fünf Gegner, Index 0 ist der Spieler.
-# Speicher ist für acht Einträge reserviert, Zeichnung/KI benutzen sechs.
-# Felder eines Figureneintrags:
-#   x                 $0360 + figur_index
-#   y                 $0368 + figur_index
-#   richtung/steht    $0370 + figur_index
-#   spawn_countdown   $04F0 + figur_index; $FF=kein Erscheinen eingeplant
+# `player` is figure 0; figures 1..5 are enemies.
+# `figures` and `enemies` below refer to the same table, ordered by original
+# index: enemies[1:6] are the five enemies; index 0 is the player.
+# Memory is reserved for eight entries; rendering and AI use six.
+# Fields in a figure entry:
+#   x                 $0360 + figure_index
+#   y                 $0368 + figure_index
+#   direction/stopped $0370 + figure_index
+#   spawn_countdown   $04F0 + figure_index; $FF=no appearance scheduled
 
-# `objekte[0..7]` sind andere bewegliche Dinge, getrennt von den Figuren:
+# `objects[0..7]` are other moving items, separate from the figures:
 #   x                 $0340 + index
 #   y                 $0348 + index
 #   dx                $0350 + index
 #   dy                $0358 + index
-#   fall_wartezeit    $0338 + index
-#   richtung/aktiv    $0378 + index; $FF=inaktiv
-# Slots 0..5: sechs im Level platzierte Äpfel, die fallen können.
-# Slot 7: genau ein gerade geschobener Block. Slot 6 hat keine klare Hauptrolle.
+#   fall_delay        $0338 + index
+#   direction/active  $0378 + index; $FF=inactive
+# Slots 0..5: six apples placed in the level that can fall.
+# Slot 7: the single block currently being pushed. Slot 6 has no clear main role.
 
-# `schuss` bündelt $6A..$71:
+# `shot` groups $6A..$71:
 #   dx, dy            $6A, $6B
-#   status            $6C: 0=bereit, $C0=fliegt, sonst Wiederauflade-Countdown
+#   status            $6C: 0=ready, $C0=flying, otherwise recharge countdown
 #   x, y              $6D, $6E
-#   war_schon_weg     $71: hat das Ausgangsfeld des Spielers bereits verlassen?
+#   has_left_player_tile $71: has the shot already left the player's tile?
 
-# `zerbrechen` bündelt $65..$69: Restzeit, Bildadresse und Feldkoordinaten.
-# `spiel.schiebe_art` ($64) ist 0 für Apfelblock oder $28 für Kirschblock-Grafik.
-# `eingabe`: Richtungsbits 0..3 plus Feuer; Feuer ist im Original aktiv-low.
-# `sfx`: Frequenz ($83), Frequenzänderung ($84), Dauer ($85), Kurztonpause ($86).
+# `breaking` groups $65..$69: time left, screen address and tile coordinates.
+# `game.sliding_type` ($64) is 0 for apple blocks, $28 for cherry block graphics.
+# `controls`: direction bits 0..3 plus fire; fire is active-low in the original.
+# `sfx`: frequency ($83), change ($84), duration ($85), short tone pause ($86).
 
 
 # ---------------------------------------------------------------------------
-# 2. START UND HAUPTABLAUF
+# 2. STARTUP AND MAIN FLOW
 # ---------------------------------------------------------------------------
 
 def basic_start():
-    # BASIC-Zeile 1 in der vorliegenden Datei:
-    if speicher[8192] == 120:        # 120 ist der Opcode SEI an Adresse $2000.
-        start()                     # SYS 8192: läuft regulär nicht zurück.
+    # BASIC line 1 in the supplied file:
+    if memory[8192] == 120:        # 120 is the SEI opcode at $2000.
+        start()                     # SYS 8192: does not normally return.
 
-    # Danach stehen noch BASIC-Zeilen eines älteren Titel-/Ladeablaufs:
-    # Zeichensatz umkopieren ($1500), Mastertronic-Titel mit PRINT/COLOR,
-    # Eingabe abfragen, LOAD "CODE",1,1 usw.
-    # In DIESER Datei wird dieser Zweig wegen der ersten Zeile übersprungen.
-    # Deshalb ist das keine zweite, in BASIC geschriebene Spiellogik.
+    # More BASIC lines follow, belonging to an older title/loading sequence:
+    # copy the character set ($1500), print the Mastertronic title with PRINT/COLOR,
+    # read input, LOAD "CODE",1,1, etc.
+    # In THIS file the first line causes that branch to be skipped.
+    # This is therefore not a second game implementation written in BASIC.
 
 
 def start():                        # $2000..$2085
-    interrupts_sperren()
-    grafikmodus_und_farben_einstellen()
-    # Zeichen bei $3800; Bildzeichen bei $0C00; Farben bei $0800.
-    raster_interrupt_einrichten(callback=bild_tick)
-    interrupts_freigeben()
+    disable_interrupts()
+    configure_graphics_and_colors()
+    # Character set at $3800; screen characters at $0C00; colors at $0800.
+    install_raster_interrupt(callback=frame_tick)
+    enable_interrupts()
 
-    baue_seitenleiste_und_rahmen()   # $2800
-    setze_anzeigen_zurueck()         # $2900
-    spiel.modus = 0
-    musik.teiltakt = 255
-    musik.position = 255
-    musik.durchlaeufe = 0
+    build_sidebar_and_border()   # $2800
+    reset_displays()         # $2900
+    game.mode = 0
+    music.subtick = 255
+    music.position = 255
+    music.loops = 0
 
-    while True:                    # Tatsächlich $2080: FF19 lesen, zurückspringen.
-        warte_auf_interrupt()
+    while True:                    # Actually $2080: read FF19, then jump back.
+        wait_for_interrupt()
 
 
-def bild_tick():                    # $20A0..$20ED
-    if interrupt_ist_keiner_vom_raster():
-        return_zum_betriebssystem()
+def frame_tick():                    # $20A0..$20ED
+    if interrupt_is_not_from_raster():
+        return_to_os()
 
-    raster_interrupt_bestaetigen()
-    spiel.tick = (spiel.tick + 1) % 256
+    acknowledge_raster_interrupt()
+    game.tick = (game.tick + 1) % 256
 
-    if spiel.modus == 0:
-        startbild_tick()
-    elif spiel.modus == 7:
+    if game.mode == 0:
+        title_tick()
+    elif game.mode == 7:
         game_over_tick()
-    elif spiel.modus >= 128:
-        tod_tick()
-    elif spiel.modus % 2 == 1:      # Modi 1, 3, 5
-        uebergang_tick()
-    else:                          # Modi 2, 4, 6
-        spiele_einen_tick()
+    elif game.mode >= 128:
+        death_tick()
+    elif game.mode % 2 == 1:      # Modes 1, 3, 5
+        transition_tick()
+    else:                          # Modes 2, 4, 6
+        play_one_tick()
 
-    return_zum_betriebssystem()
-
-
-def startbild_tick():               # $2200; Musikroutine $2B00
-    spiele_titelmusik()
-    aktualisiere_startbild_animation()
-    # Belegt: Je nach Musikposition wird Karte 0 bzw. eine Spielkarte gezeichnet.
-    # Karte 0 ist ein Rahmenmuster, kein siebtes spielbares Level.
-    # Außerdem werden Titel, Credits und "press fire to start" eingeblendet.
-
-    eingabe = lese_eingabe()
-    if eingabe.feuer:
-        spiel.modus = 1
-        spiel.uebergang = 96
-        spiel.karten_index = -1     # Original: $FF, nächstes INC ergibt 0.
-        spiel.schwierigkeitsstufe = -1
-        spiel.levelnummer = 0
-        spiel.uhr = "00:00"
-        spiel.uhr_teiltakt = 0
-        spiel.highscore_platz = 8
-        setze_anzeigen_zurueck()    # Punkte=00000, Leben=5, weitere Anzeigen.
-        lade_naechste_karte()
+    return_to_os()
 
 
+def title_tick():               # $2200; music routine $2B00
+    play_title_music()
+    update_title_animation()
+    # VERIFIED: depending on music position, map 0 or a playable map is drawn.
+    # Map 0 is a border pattern, not a seventh playable level.
+    # The title, credits and "press fire to start" are also displayed.
 
-def setze_anzeigen_zurueck():        # $2900
-    spiel.punkte = 0
-    spiel.leben = 5
-    spiel.levelnummer = 0
-    spiel.bonus = 0
-    spiel.uhr = "00:00"
-    # Highscores werden dabei nicht gelöscht.
+    controls = read_input()
+    if controls.fire:
+        game.mode = 1
+        game.transition = 96
+        game.map_index = -1     # Original: $FF; the next INC produces 0.
+        game.difficulty_level = -1
+        game.round_number = 0
+        game.clock = "00:00"
+        game.clock_subtick = 0
+        game.highscore_rank = 8
+        reset_displays()    # Score=00000, lives=5, and other displays.
+        load_next_map()
 
 
-def aktualisiere_startbild_animation():  # $2203..$2231
-    if musik.teiltakt != 0:
+
+def reset_displays():        # $2900
+    game.score = 0
+    game.lives = 5
+    game.round_number = 0
+    game.bonus = 0
+    game.clock = "00:00"
+    # High scores are not cleared here.
+
+
+def update_title_animation():  # $2203..$2231
+    if music.subtick != 0:
         return
-    if musik.durchlaeufe % 2 == 1 and musik.position % 32 == 0:
-        lade_und_zeichne_karte(musik.position // 32 + 1)
-    elif musik.durchlaeufe % 2 == 0 and musik.position == 0:
-        lade_und_zeichne_karte(0)
-        zeichne_titel_credits_und_startaufforderung()  # $2A40
+    if music.loops % 2 == 1 and music.position % 32 == 0:
+        load_and_draw_map(music.position // 32 + 1)
+    elif music.loops % 2 == 0 and music.position == 0:
+        load_and_draw_map(0)
+        draw_title_credits_and_start_prompt()  # $2A40
 
 
-def uebergang_tick():               # $2300, $23D0
-    if spiel.uebergang != 0:
-        spiel.uebergang -= 1
-        if spiel.uebergang == 128:
-            lade_naechste_karte()
-        elif spiel.uebergang > 128:
-            spiele_levelwechsel_melodie(spiel.uebergang)
+def transition_tick():               # $2300, $23D0
+    if game.transition != 0:
+        game.transition -= 1
+        if game.transition == 128:
+            load_next_map()
+        elif game.transition > 128:
+            play_round_transition_tune(game.transition)
         return
 
-    entferne_get_ready_einblendung()  # Gesicherten Bildbereich restaurieren.
-    spiel.modus += 1                 # 1->2, 3->4, 5->6
-    musik.teiltakt = 255
-    musik.position = 255
+    remove_get_ready_overlay()  # Restore the saved screen area.
+    game.mode += 1                 # 1->2, 3->4, 5->6
+    music.subtick = 255
+    music.position = 255
 
 
-def spiele_einen_tick():            # $237E..$23CC: tatsächliche Aufrufreihenfolge
-    begleite_spiel_mit_musik()      # $1780, über eine Taste ein-/ausschaltbar
-    entferne_alte_figuren()         # $30A0
-    bewege_aktive_objekte()         # $3380
-    bestimme_spielerrichtung()      # $2E2C
-    bewege_spieler()                # $2E80
-    raeume_felder_unter_spieler()   # $2F30: Erde löschen, Kirschen einsammeln
-    pruefe_karten_ziel()            # $2BF0
-    versuche_block_zu_schieben()    # $2CB3
-    beende_schiebebewegung_wenn_noetig()  # $2400
-    aktiviere_fallende_aepfel()     # $32BF
-    zerbrechen_tick()              # $2470
-    versuche_zu_schiessen()         # $2700
-    bewege_schuss()                # $2740
-    soundeffekt_tick()             # $2560
-    gegner_bewegungstakt()         # $1C00, inklusive Spawn-Countdown und Bonus
-    pruefe_treffer_an_gegnern()     # $1D30: Schuss und bewegliche Objekte
-    plane_gegnernachschub()         # $1E00
-    sammle_figuren_zum_zeichnen()   # $3000
-    sammle_objekte_zum_zeichnen()   # $3200
-    zeichne_gesammelte_zeichen()    # $30C0
-    animiere_gegnerausgang()        # $1FA0
-    pruefe_alle_gegner_beseitigt()  # $1E34
-    pruefe_spieler_getroffen()     # $1E50
-    aktualisiere_uhr()              # $1A38
-    aktualisiere_highscore()        # $20FA
-    # Zustandswechsel mitten im Tick stoppen die restlichen Aufrufe nicht.
+def play_one_tick():            # $237E..$23CC: actual call order
+    play_in_game_music()      # $1780, toggled by a key
+    erase_old_figures()         # $30A0
+    move_active_objects()         # $3380
+    choose_player_direction()      # $2E2C
+    move_player()                # $2E80
+    clear_tiles_under_player()   # $2F30: remove earth, collect cherries
+    check_map_goal()            # $2BF0
+    try_to_push_block()    # $2CB3
+    finish_sliding_if_blocked()  # $2400
+    activate_falling_apples()     # $32BF
+    breaking_tick()              # $2470
+    try_to_shoot()         # $2700
+    move_shot()                # $2740
+    sound_effect_tick()             # $2560
+    enemy_movement_tick()         # $1C00, including spawn countdown and bonus
+    check_enemy_hits()     # $1D30: shot and moving objects
+    schedule_enemy_reserves()         # $1E00
+    queue_figures_for_drawing()   # $3000
+    queue_objects_for_drawing()   # $3200
+    draw_queued_characters()    # $30C0
+    animate_enemy_exit()        # $1FA0
+    check_all_enemies_defeated()  # $1E34
+    check_player_hit()     # $1E50
+    update_clock()              # $1A38
+    update_highscore()        # $20FA
+    # A state change during the tick does not stop the remaining calls.
 
 
 # ---------------------------------------------------------------------------
-# 3. KARTE UND LEVELDATEN
+# 3. MAP AND LEVEL DATA
 # ---------------------------------------------------------------------------
 
-def feld(x, y):                     # $2F80, Grenzenprüfung $2F10; BELEGT/GEPRÜFT
+def tile(x, y):                     # $2F80; bounds check $2F10; VERIFIED/TESTED
     if not (0 <= x < 16 and 0 <= y < 12):
-        return AUSSERHALB
-    byte = speicher[0x0600 + y * 8 + x // 2]
+        return OUTSIDE
+    byte = memory[0x0600 + y * 8 + x // 2]
     if x % 2 == 0:
         return byte >> 4
     return byte & 15
 
 
-def setze_feld(x, y, typ):          # $2FB0; BELEGT/GEPRÜFT
-    # Aufrufer müssen gültige Koordinaten liefern; Original prüft hier NICHT.
-    adresse = 0x0600 + y * 8 + x // 2
-    vorher = speicher[adresse]
+def set_tile(x, y, tile_type):          # $2FB0; VERIFIED/TESTED
+    # Callers must supply valid coordinates; the original does NOT check here.
+    address = 0x0600 + y * 8 + x // 2
+    previous = memory[address]
     if x % 2 == 0:
-        speicher[adresse] = (vorher & 15) | (typ << 4)
+        memory[address] = (previous & 15) | (tile_type << 4)
     else:
-        speicher[adresse] = (vorher & 240) | (typ & 15)
-    # Zwei Kartenfelder pro Byte: 192 Felder benötigen nur 96 Bytes RAM.
+        memory[address] = (previous & 240) | (tile_type & 15)
+    # Two tiles per byte: 192 tiles need only 96 bytes of RAM.
 
 
-def lade_und_zeichne_karte(nummer):  # $2940, $2A00, $2E00
-    quelle = 0x3500 + nummer * 96
+def load_and_draw_map(number):  # $2940, $2A00, $2E00
+    source = 0x3500 + number * 96
     for y in range(12):
         for x in range(16):
-            typ = entpacke_halbbyte(speicher, quelle, x, y)
-            zeichne_kartenfeld(x, y, typ)
-    kopiere_bytes(quelle, ziel=0x0600, anzahl=96)
-    # Karte 0: Rahmen für das Startbild. Karten 1..6: spielbare Vorlagen.
-    # Zeichnung: vier Grafikzeichen je Feld aus Tabellen $1880..$189F.
-    # Farben: $18A0 und je nach Zeile/Modus $34D0..$34E7.
+            tile_type = unpack_nibble(memory, source, x, y)
+            draw_map_tile(x, y, tile_type)
+    copy_bytes(source, destination=0x0600, count=96)
+    # Map 0: title border. Maps 1..6: playable templates.
+    # Drawing: four graphic characters per tile from tables $1880..$189F.
+    # Colors: $18A0 and, depending on row/mode, $34D0..$34E7.
 
 
-def lade_naechste_karte():          # $315F..$31F0
-    spiel.karten_index += 1
-    spiel.levelnummer = (spiel.levelnummer + 1) % 100
-    spiel.schwierigkeitsstufe += 1
-    schwierigkeit = min(spiel.schwierigkeitsstufe, 15)
-    spiel.nachschub = [0, 1, 2, 3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 7, 8][schwierigkeit]
-    spiel.gegner_tempo = [120, 128, 136, 144, 152, 160, 168, 176,
-                         180, 184, 188, 192, 196, 200, 204, 208][schwierigkeit]
-    # Original hält den Stufenzähler als Byte; nach 256 Schritten läuft er über.
+def load_next_map():          # $315F..$31F0
+    game.map_index += 1
+    game.round_number = (game.round_number + 1) % 100
+    game.difficulty_level += 1
+    difficulty = min(game.difficulty_level, 15)
+    game.reserves = [0, 1, 2, 3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 7, 8][difficulty]
+    game.enemy_speed = [120, 128, 136, 144, 152, 160, 168, 176,
+                         180, 184, 188, 192, 196, 200, 204, 208][difficulty]
+    # The original stores difficulty as a byte; it wraps after 256 steps.
 
-    if spiel.karten_index == 6:
-        spiel.karten_index = 0
-    lade_und_zeichne_karte(spiel.karten_index + 1)
-    sichere_bildbereich_und_zeige_get_ready()  # $233A; Text aus $3EEC
+    if game.map_index == 6:
+        game.map_index = 0
+    load_and_draw_map(game.map_index + 1)
+    save_screen_area_and_show_get_ready()  # $233A; text from $3EEC
 
-    # Je Karte 16 Startpositionsbytes: acht x-Werte, danach acht y-Werte.
+    # 16 starting-position bytes per map: eight x values, then eight y values.
     for i in range(8):
-        objekte[i].x = speicher[0x37A0 + spiel.karten_index * 16 + i]
-        objekte[i].y = speicher[0x37A0 + spiel.karten_index * 16 + 8 + i]
-    setze_figuren_und_effekte_zurueck()
+        objects[i].x = memory[0x37A0 + game.map_index * 16 + i]
+        objects[i].y = memory[0x37A0 + game.map_index * 16 + 8 + i]
+    reset_figures_and_effects()
 
 
-def setze_figuren_und_effekte_zurueck():  # $3194; auch nach Lebensverlust benutzt
-    for objekt in objekte:
-        objekt.dx = objekt.dy = 0
-        objekt.aktiv = False
-    for figur in figuren:
-        figur.x = figur.y = 0
-        figur.aktiv = False
-    spieler.x, spieler.y = 56, 8
-    spieler.richtung = UNTEN
-    spieler.steht = False
-    spieler.aktiv = True
+def reset_figures_and_effects():  # $3194; also used after losing a life
+    for object in objects:
+        object.dx = object.dy = 0
+        object.active = False
+    for figure in figures:
+        figure.x = figure.y = 0
+        figure.active = False
+    player.x, player.y = 56, 8
+    player.direction = DOWN
+    player.stopped = False
+    player.active = True
 
-    ton.stumm()
-    zerbrechen.restzeit = 0
-    schuss.status = 0
-    sfx.frequenz = sfx.aenderung = sfx.dauer = 0
-    # Das Original setzt $86 (Kurztonpause) hier nicht ausdrücklich zurück.
-    for i, zeit in enumerate([32, 48, 64, 80, 96], start=1):
-        gegner[i].spawn_countdown = zeit
-    # Diese fünf Gegner sind der Grundbestand; nachschub kommt zusätzlich.
-    spiel.gegner_takt = 0
-    spiel.bonus_halbtakt = 0
-    spiel.bonus = {1: 599, 2: 599, 3: 799, 4: 799, 5: 999, 6: 999}[spiel.modus & 127]
-    # Nur Figuren/Effekte werden zurückgesetzt. Die ausgegrabene Karte bleibt
-    # bei Lebensverlust erhalten; feste Äpfel können daher erneut fallen.
+    audio.mute()
+    breaking.time_left = 0
+    shot.status = 0
+    sfx.frequency = sfx.change = sfx.duration = 0
+    # The original does not explicitly reset $86 (short tone pause) here.
+    for i, time in enumerate([32, 48, 64, 80, 96], start=1):
+        enemies[i].spawn_countdown = time
+    # These five enemies are the base population; reserves are additional.
+    game.enemy_clock = 0
+    game.bonus_half_tick = 0
+    game.bonus = {1: 599, 2: 599, 3: 799, 4: 799, 5: 999, 6: 999}[game.mode & 127]
+    # Only figures/effects are reset. The excavated map survives a lost life,
+    # so stationary apples may fall again.
 
 
 # ---------------------------------------------------------------------------
-# 4. EINGABE UND SPIELERBEWEGUNG
+# 4. INPUT AND PLAYER MOVEMENT
 # ---------------------------------------------------------------------------
 
-def lese_eingabe():                 # $3100..$315C
-    # Original liest die Tastatur-/Joystickmatrix über $FD30 und $FF08.
-    # Mehrere Scans werden zu vier Richtungsbits und Feuer zusammengeführt.
-    # Hier nur das Ergebnis der Hardwareabfrage:
-    return Eingabe(richtungsmaske=hardware_richtungen(), feuer=hardware_feuer())
+def read_input():                 # $3100..$315C
+    # The original reads the keyboard/joystick matrix through $FD30 and $FF08.
+    # Multiple scans are combined into four direction bits and fire.
+    # Only the result of the hardware query is represented here:
+    return Input(direction_mask=hardware_directions(), fire=hardware_fire())
 
 
-def waehle_richtung(maske):         # $2600; BELEGT/GEPRÜFT
-    # Bei gleichzeitig gedrückten Richtungen gilt diese feste Priorität.
-    for richtung in [UNTEN, OBEN, RECHTS, LINKS]:
-        if maske & RICHTUNGSBIT[richtung]:
-            return richtung
+def select_direction(mask):         # $2600; VERIFIED/TESTED
+    # This fixed priority applies when several directions are pressed together.
+    for direction in [DOWN, UP, RIGHT, LEFT]:
+        if mask & DIRECTION_BIT[direction]:
+            return direction
     return None
 
 
-def bestimme_spielerrichtung():     # $2E2C, $2648, $2634
-    spiel.eingabe = lese_eingabe()
-    gewuenscht = spiel.eingabe.richtungsmaske
+def choose_player_direction():     # $2E2C, $2648, $2634
+    game.controls = read_input()
+    requested = game.controls.direction_mask
 
-    if spieler.x % 8 != 0 or spieler.y % 8 != 0:
-        # Zwischen zwei Feldern nur entlang der aktuellen Achse bewegen.
-        erlaubte_achse = 12 if spieler.x % 8 != 0 else 3
-        auswahl = gewuenscht & erlaubte_achse
-        if auswahl == 0:
-            # Ohne passende Eingabe bis zur nächsten Feldgrenze weiterlaufen.
-            auswahl = RICHTUNGSBIT[spieler.richtung] & erlaubte_achse
-        spieler.richtung = waehle_richtung(auswahl)
-        spieler.steht = False
+    if player.x % 8 != 0 or player.y % 8 != 0:
+        # Between tiles, movement is restricted to the current axis.
+        allowed_axis = 12 if player.x % 8 != 0 else 3
+        choice = requested & allowed_axis
+        if choice == 0:
+            # Without matching input, continue to the next tile boundary.
+            choice = DIRECTION_BIT[player.direction] & allowed_axis
+        player.direction = select_direction(choice)
+        player.stopped = False
         return
 
-    erlaubt = freie_nachbarn(spieler.x // 8, spieler.y // 8, fuer_spieler=True)
-    richtung = waehle_richtung(gewuenscht & erlaubt)
-    if richtung is not None:
-        spieler.richtung = richtung
-        spieler.steht = False
+    allowed = free_neighbors(player.x // 8, player.y // 8, for_player=True)
+    direction = select_direction(requested & allowed)
+    if direction is not None:
+        player.direction = direction
+        player.stopped = False
     else:
-        # Bei blockierter Richtung Blickrichtung merken, aber nicht laufen.
-        richtung = waehle_richtung(gewuenscht)
-        if richtung is not None:
-            spieler.richtung = richtung
-        spieler.steht = True
+        # If blocked, remember the facing direction but do not move.
+        direction = select_direction(requested)
+        if direction is not None:
+            player.direction = direction
+        player.stopped = True
 
 
-def freie_nachbarn(x, y, fuer_spieler):  # $2EA0 bzw. $1C80
-    maske = 0
-    for richtung, (dx, dy) in SCHRITT.items():
-        typ = feld(x + dx, y + dy)
-        if (typ < 3 if fuer_spieler else typ == LEER):
-            maske |= RICHTUNGSBIT[richtung]
-    return maske
-    # Spieler: darf durch leere Felder, Erde und Kirschen.
-    # Gegner: ausschließlich durch leere Felder; sie graben NICHT.
-    # VEREINFACHT: Original hat zusätzliche einzelne Randvergleiche.
-    # Beim oberen Rand vergleicht es seltsamerweise mit $10 statt $FF.
-    # Der Kartenleser weist das entstehende y=$FF aber ohnehin zurück.
+def free_neighbors(x, y, for_player):  # $2EA0 or $1C80
+    mask = 0
+    for direction, (dx, dy) in STEP.items():
+        tile_type = tile(x + dx, y + dy)
+        if (tile_type < 3 if for_player else tile_type == EMPTY):
+            mask |= DIRECTION_BIT[direction]
+    return mask
+    # Player: may enter empty tiles, earth and cherries.
+    # Enemies: empty tiles only; they do NOT dig.
+    # SIMPLIFIED: the original has additional individual boundary comparisons.
+    # At the top boundary it oddly compares against $10 instead of $FF.
+    # The map reader rejects the resulting y=$FF anyway.
 
 
-def bewege_spieler():               # $2E80
-    if spiel.tick % 2 == 0 and not spieler.steht:
-        dx, dy = SCHRITT[spieler.richtung]
-        spieler.x += dx
-        spieler.y += dy
-    # Ein Kartenfeld braucht 8 solche Schritte, also regulär 16 Bild-Ticks.
+def move_player():               # $2E80
+    if game.tick % 2 == 0 and not player.stopped:
+        dx, dy = STEP[player.direction]
+        player.x += dx
+        player.y += dy
+    # A tile takes 8 such steps, normally 16 frame ticks.
 
 
-def raeume_felder_unter_spieler():   # $2F30, $2530
-    x, y = spieler.x // 8, spieler.y // 8
-    betrete_feld(x, y)
-    if (spieler.x % 8 != 0 or spieler.y % 8 != 0) and not spieler.steht:
-        # Die Figur kann gerade zwei Kartenfelder überdecken.
-        if spieler.richtung in [LINKS, RECHTS]:
-            betrete_feld(x + 1, y)
+def clear_tiles_under_player():   # $2F30, $2530
+    x, y = player.x // 8, player.y // 8
+    enter_tile(x, y)
+    if (player.x % 8 != 0 or player.y % 8 != 0) and not player.stopped:
+        # The figure can currently overlap two map tiles.
+        if player.direction in [LEFT, RIGHT]:
+            enter_tile(x + 1, y)
         else:
-            betrete_feld(x, y + 1)
+            enter_tile(x, y + 1)
 
 
-def betrete_feld(x, y):             # $2530
-    typ = feld(x, y)
-    if typ == APFEL:
+def enter_tile(x, y):             # $2530
+    tile_type = tile(x, y)
+    if tile_type == APPLE:
         return
-    if typ == KIRSCHE:
-        addiere_punkte(25)          # $1B00, im Original getrennt +20 und +5
-        starte_sound(frequenz=240, aenderung=-20, dauer=8)
-    setze_feld(x, y, LEER)
-    # Kartenlogik und sichtbare Grafik sind getrennt: die Figurenzeichnung
-    # und das anschließende Löschen alter Figuren schaffen sichtbare Gänge.
+    if tile_type == CHERRY:
+        add_points(25)          # $1B00; the original adds +20 and +5 separately
+        start_sound(frequency=240, change=-20, duration=8)
+    set_tile(x, y, EMPTY)
+    # Map logic and visible graphics are separate: drawing figures and then
+    # erasing their old positions creates the visible passages.
 
 
 # ---------------------------------------------------------------------------
-# 5. SCHUSS: ABPRALLEN, RÜCKKEHR UND WIEDERAUFLADEN
+# 5. SHOT: BOUNCING, RETURNING AND RECHARGING
 # ---------------------------------------------------------------------------
 
-def versuche_zu_schiessen():        # $2700
-    if not spiel.eingabe.feuer or schuss.status != 0 or spiel.modus == 6:
+def try_to_shoot():        # $2700
+    if not game.controls.fire or shot.status != 0 or game.mode == 6:
         return
-    # Überraschend: Der Schuss fliegt immer diagonal, aus vier Tabellenwerten.
-    schuss.dx, schuss.dy = {
-        LINKS: (-2, 2), RECHTS: (2, -2), OBEN: (2, -2), UNTEN: (-2, 2)
-    }[spieler.richtung]
-    schuss.x = (spieler.x // 8) * 8 + 4
-    schuss.y = (spieler.y // 8) * 8
-    schuss.status = 192            # $C0: fliegt
-    schuss.war_schon_weg = False
+    # Surprisingly, the shot always travels diagonally, using four table entries.
+    shot.dx, shot.dy = {
+        LEFT: (-2, 2), RIGHT: (2, -2), UP: (2, -2), DOWN: (-2, 2)
+    }[player.direction]
+    shot.x = (player.x // 8) * 8 + 4
+    shot.y = (player.y // 8) * 8
+    shot.status = 192            # $C0: flying
+    shot.has_left_player_tile = False
 
 
-def bewege_schuss():                # $2740
-    if schuss.status != 192:
+def move_shot():                # $2740
+    if shot.status != 192:
         return
-    loesche_schusszeichen_an_alter_position()
+    erase_shot_at_old_position()
 
-    if feld((schuss.x + schuss.dx) // 8, schuss.y // 8) != LEER:
-        schuss.dx = -schuss.dx
-        spiele_abprallton()
-    if feld(schuss.x // 8, (schuss.y + schuss.dy) // 8) != LEER:
-        schuss.dy = -schuss.dy
-        spiele_abprallton()
-    if feld((schuss.x + schuss.dx) // 8, (schuss.y + schuss.dy) // 8) != LEER:
-        schuss.dx = -schuss.dx
-        schuss.dy = -schuss.dy
-        spiele_abprallton()
+    if tile((shot.x + shot.dx) // 8, shot.y // 8) != EMPTY:
+        shot.dx = -shot.dx
+        play_bounce_sound()
+    if tile(shot.x // 8, (shot.y + shot.dy) // 8) != EMPTY:
+        shot.dy = -shot.dy
+        play_bounce_sound()
+    if tile((shot.x + shot.dx) // 8, (shot.y + shot.dy) // 8) != EMPTY:
+        shot.dx = -shot.dx
+        shot.dy = -shot.dy
+        play_bounce_sound()
 
-    schuss.x += schuss.dx
-    schuss.y += schuss.dy
-    zeichne_schusszeichen()        # Vier Zeichenversionen nach Unterposition.
-    merke_schuss_bildadresse()      # $1BF5; zum Löschen bei Spielertod.
+    shot.x += shot.dx
+    shot.y += shot.dy
+    draw_shot_character()        # Four character versions depending on subposition.
+    remember_shot_screen_address()      # $1BF5; used to erase the shot when the player dies.
 
-    if (schuss.x // 8, schuss.y // 8) == (spieler.x // 8, spieler.y // 8):
-        if schuss.war_schon_weg:
-            loesche_schusszeichen_an_alter_position()
-            schuss.status = 0     # Wieder eingesammelt: sofort schussbereit.
+    if (shot.x // 8, shot.y // 8) == (player.x // 8, player.y // 8):
+        if shot.has_left_player_tile:
+            erase_shot_at_old_position()
+            shot.status = 0     # Caught again: immediately ready to shoot.
     else:
-        schuss.war_schon_weg = True
+        shot.has_left_player_tile = True
 
 
-def schuss_trifft_gegner(gegner):   # Teil von $1D30
-    gegner.aktiv = False
-    addiere_punkte(100)             # $1B10
-    starte_sound(frequenz=192, aenderung=63, dauer=32)
-    loesche_schusszeichen_an_alter_position()
-    schuss.status = 128 + (zufallsbyte() & 63)  # 128..191 Ticks Aufladezeit
+def shot_hits_enemy(enemies):   # Part of $1D30
+    enemies.active = False
+    add_points(100)             # $1B10
+    start_sound(frequency=192, change=63, duration=32)
+    erase_shot_at_old_position()
+    shot.status = 128 + (random_byte() & 63)  # 128..191 ticks of recharge time
 
 
-def schuss_wiederaufladen():        # $1D98
-    if schuss.status not in [0, 192]:
-        schuss.status -= 1
-        if schuss.status == 32:
-            starte_sound(frequenz=16, aenderung=130, dauer=16)
+def recharge_shot():        # $1D98
+    if shot.status not in [0, 192]:
+        shot.status -= 1
+        if shot.status == 32:
+            start_sound(frequency=16, change=130, duration=16)
 
 
 # ---------------------------------------------------------------------------
-# 6. GEGNER: ERSCHEINEN, TEMPO, ZUFÄLLIGE WEGE UND TREFFER
+# 6. ENEMIES: SPAWNING, SPEED, RANDOM PATHS AND HITS
 # ---------------------------------------------------------------------------
 
-def gegner_bewegungstakt():         # $1C00
-    summe = spiel.gegner_takt + spiel.gegner_tempo
-    spiel.gegner_takt = summe % 256
-    if summe < 256:
+def enemy_movement_tick():         # $1C00
+    total = game.enemy_clock + game.enemy_speed
+    game.enemy_clock = total % 256
+    if total < 256:
         return
-    # Erst beim Überlauf werden Gegner, Erscheinen und Bonus weitergeschaltet.
-    # Ein höherer Tempo-Wert bedeutet häufigere Bewegung.
-    for g in gegner[5:0:-1]:
+    # Only an overflow advances enemy movement, spawning and the bonus.
+    # A higher speed value means more frequent movement.
+    for g in enemies[5:0:-1]:
         if g.spawn_countdown != 255:
             if g.spawn_countdown == 0:
                 g.x, g.y = 56, 48
-                g.richtung = RECHTS
-                g.aktiv = True
+                g.direction = RIGHT
+                g.active = True
             g.spawn_countdown = (g.spawn_countdown - 1) % 256
 
-    for g in gegner[5:0:-1]:
-        if not g.aktiv:
+    for g in enemies[5:0:-1]:
+        if not g.active:
             continue
-        dx, dy = SCHRITT[g.richtung]
+        dx, dy = STEP[g.direction]
         g.x += dx
         g.y += dy
         if g.x % 8 == 0 and g.y % 8 == 0:
-            waehle_gegnerweg(g)
-            setze_feld(g.x // 8, g.y // 8, LEER)
+            choose_enemy_path(g)
+            set_tile(g.x // 8, g.y // 8, EMPTY)
     bonus_tick()
 
 
-def waehle_gegnerweg(g):            # $1C80..$1D20
-    frei = freie_nachbarn(g.x // 8, g.y // 8, fuer_spieler=False)
-    rueckwaerts = GEGENRICHTUNG[g.richtung]
-    ohne_umkehr = frei & ~RICHTUNGSBIT[rueckwaerts]
-    if ohne_umkehr == 0:
-        g.richtung = rueckwaerts   # Sackgasse: umkehren.
+def choose_enemy_path(g):            # $1C80..$1D20
+    free = free_neighbors(g.x // 8, g.y // 8, for_player=False)
+    backward = OPPOSITE[g.direction]
+    without_reversal = free & ~DIRECTION_BIT[backward]
+    if without_reversal == 0:
+        g.direction = backward   # Dead end: turn around.
         return
     while True:
-        kandidat = zufallsbyte() & 3
-        if ohne_umkehr & RICHTUNGSBIT[kandidat]:
-            g.richtung = kandidat
+        candidate = random_byte() & 3
+        if without_reversal & DIRECTION_BIT[candidate]:
+            g.direction = candidate
             return
-    # Keine Distanz zum Spieler, kein Pfadfinder, kein "Verfolgen" im Code.
+    # No player distance, pathfinding or "chasing" appears in the code.
 
 
-def zufallsbyte():                  # $1FE0; BELEGT/GEPRÜFT
-    spiel.zufallszustand = (spiel.zufallszustand + 0xB13579) % (2 ** 24)
-    return spiel.zufallszustand >> 16
-    # Ein einfacher deterministischer 24-Bit-Zähler mit großem Additionsschritt.
-    # Der Initialwert wird in den untersuchten Startfunktionen nicht gesetzt.
+def random_byte():                  # $1FE0; VERIFIED/TESTED
+    game.random_state = (game.random_state + 0xB13579) % (2 ** 24)
+    return game.random_state >> 16
+    # A simple deterministic 24-bit counter with a large additive step.
+    # The initial value is not set by the startup functions examined here.
 
 
-def plane_gegnernachschub():        # $1E00
-    for g in gegner[5:0:-1]:
-        if spiel.nachschub == 0:
+def schedule_enemy_reserves():        # $1E00
+    for g in enemies[5:0:-1]:
+        if game.reserves == 0:
             return
-        if not g.aktiv and g.spawn_countdown == 255:
-            spiel.nachschub -= 1
+        if not g.active and g.spawn_countdown == 255:
+            game.reserves -= 1
             g.x, g.y = 56, 48
-            g.spawn_countdown = 64 + (zufallsbyte() & 63)
+            g.spawn_countdown = 64 + (random_byte() & 63)
 
 
-def abstand_wie_im_original(a, b):  # In $1D30 und $1E50 mehrfach vorhanden.
-    # Nicht ganz abs(a-b): negative Differenzen werden bitweise invertiert.
-    # Beispiel: -1 -> 0, -6 -> 5. Grenzfälle sind daher leicht asymmetrisch.
-    differenz = (a - b) % 256
-    return differenz ^ 255 if differenz & 128 else differenz
+def original_distance(a, b):  # Repeated in $1D30 and $1E50.
+    # Not quite abs(a-b): negative differences are bitwise inverted.
+    # Examples: -1 -> 0, -6 -> 5. Boundary cases are slightly asymmetric.
+    difference = (a - b) % 256
+    return difference ^ 255 if difference & 128 else difference
 
 
-def nahe(a, b, grenze):
-    return (abstand_wie_im_original(a.x, b.x) < grenze
-            and abstand_wie_im_original(a.y, b.y) < grenze)
+def near(a, b, threshold):
+    return (original_distance(a.x, b.x) < threshold
+            and original_distance(a.y, b.y) < threshold)
 
 
-def pruefe_treffer_an_gegnern():     # $1D30..$1DFD
-    if schuss.status == 192:
-        for g in gegner[5:0:-1]:
-            if g.aktiv and nahe(g, schuss, grenze=6):
-                schuss_trifft_gegner(g)
-                # Original bricht die Schleife hier nicht ausdrücklich ab.
-    schuss_wiederaufladen()
+def check_enemy_hits():     # $1D30..$1DFD
+    if shot.status == 192:
+        for g in enemies[5:0:-1]:
+            if g.active and near(g, shot, threshold=6):
+                shot_hits_enemy(g)
+                # The original does not explicitly break out of this loop here.
+    recharge_shot()
 
-    for objekt in reversed(objekte):
-        if not objekt.aktiv:
+    for object in reversed(objects):
+        if not object.active:
             continue
-        for g in gegner[5:0:-1]:
-            if g.aktiv and nahe(g, objekt, grenze=6):
-                g.aktiv = False
-                addiere_punkte(100 if spiel.modus == 6 else 250)  # $1B20
-                starte_sound(frequenz=128, aenderung=63, dauer=32)
-    # Auch ein geschobener Block (Slot 7) kann Gegner treffen.
+        for g in enemies[5:0:-1]:
+            if g.active and near(g, object, threshold=6):
+                g.active = False
+                add_points(100 if game.mode == 6 else 250)  # $1B20
+                start_sound(frequency=128, change=63, duration=32)
+    # A pushed block (slot 7) can also hit enemies.
 
 
 # ---------------------------------------------------------------------------
-# 7. FALLENDE ÄPFEL UND SCHIEBBARE BLÖCKE
+# 7. FALLING APPLES AND PUSHABLE BLOCKS
 # ---------------------------------------------------------------------------
 
-def aktiviere_fallende_aepfel():    # $32BF..$3327
-    if spiel.modus == 6:
-        return                     # Im Schieberätsel keine Schwerkraft.
-    for objekt in objekte[5::-1]:   # Nur sechs feste Apfelpositionen.
-        x, y_darunter = objekt.x // 8, objekt.y // 8 + 1
-        if feld(x, y_darunter) == LEER and y_darunter < 12:
-            objekt.dx, objekt.dy = 0, 1
-            if not objekt.aktiv or objekt.richtung != UNTEN:
-                objekt.fall_wartezeit = 32   # $3370
-            objekt.aktiv = True
-            objekt.richtung = UNTEN
-        elif objekt.aktiv:
-            objekt.aktiv = False
-            setze_feld(objekt.x // 8, objekt.y // 8, APFEL)
-            zeichne_festes_objekt(objekt.x // 8, objekt.y // 8, APFEL)
-            sfx.dauer = 0
+def activate_falling_apples():    # $32BF..$3327
+    if game.mode == 6:
+        return                     # No gravity in the block puzzle.
+    for object in objects[5::-1]:   # Only the six fixed apple positions.
+        x, y_below = object.x // 8, object.y // 8 + 1
+        if tile(x, y_below) == EMPTY and y_below < 12:
+            object.dx, object.dy = 0, 1
+            if not object.active or object.direction != DOWN:
+                object.fall_delay = 32   # $3370
+            object.active = True
+            object.direction = DOWN
+        elif object.active:
+            object.active = False
+            set_tile(object.x // 8, object.y // 8, APPLE)
+            draw_stationary_object(object.x // 8, object.y // 8, APPLE)
+            sfx.duration = 0
 
 
-def bewege_aktive_objekte():        # $3380
-    for objekt in reversed(objekte):
-        if not objekt.aktiv:
+def move_active_objects():        # $3380
+    for object in reversed(objects):
+        if not object.active:
             continue
-        if objekt.fall_wartezeit != 0:
-            fall_verzoegerung(objekt)
+        if object.fall_delay != 0:
+            delay_fall(object)
         else:
-            objekt.x += objekt.dx
-            objekt.y += objekt.dy
+            object.x += object.dx
+            object.y += object.dy
 
 
-def fall_verzoegerung(objekt):      # $2C90; OFFEN: auffälliger Stack-Ablauf!
-    objekt.fall_wartezeit -= 1
-    if objekt.fall_wartezeit == 0:
-        setze_feld(objekt.x // 8, objekt.y // 8, LEER)
-        starte_sound(frequenz=208, aenderung=-2, dauer=255)
+def delay_fall(object):      # $2C90; OPEN: unusual stack behavior!
+    object.fall_delay -= 1
+    if object.fall_delay == 0:
+        set_tile(object.x // 8, object.y // 8, EMPTY)
+        start_sound(frequency=208, change=-2, duration=255)
 
-    # Die naheliegende Lesart ist: kurz warten, dann den Apfel fallen lassen.
-    # ABER: Im tatsächlichen Binärcode springt BNE $2CAC bei Restzeit != 0 zu
-    # zwei PLA-Befehlen. Die zugehörigen PHA liegen nur im ANDEREN Zweig.
-    # Das verändert den Rücksprung-Stack. Eine normale Verzögerung ist dadurch
-    # nicht für alle Aufrufe nachgewiesen. Hier steht die semantische Lesart;
-    # der auffällige Kontrollfluss wird ausdrücklich NICHT als gelöst ausgegeben.
-    # Siehe auch den Hinweis am Dateiende. Keine stillschweigende "Reparatur".
+    # The natural interpretation is: wait briefly, then let the apple fall.
+    # BUT: in the actual binary, BNE $2CAC jumps to two PLA instructions when
+    # time_left != 0. The corresponding PHA instructions are only in the OTHER branch.
+    # This changes the return stack. A normal delay is therefore not established
+    # for every call. The semantic interpretation is shown here; the unusual
+    # control flow is explicitly NOT presented as solved.
+    # See the note at the end of this file. No silent "repair" is implied.
 
 
-def versuche_block_zu_schieben():   # $2CB3..$2DC0
-    if zerbrechen.restzeit != 0 or objekte[7].aktiv:
+def try_to_push_block():   # $2CB3..$2DC0
+    if breaking.time_left != 0 or objects[7].active:
         return
-    if spieler.x % 8 != 0 or spieler.y % 8 != 0 or not spiel.eingabe.feuer:
+    if player.x % 8 != 0 or player.y % 8 != 0 or not game.controls.fire:
         return
-    dx, dy = SCHRITT[spieler.richtung]
-    x = spieler.x // 8 + dx
-    y = spieler.y // 8 + dy
-    blocktyp = feld(x, y)
-    if blocktyp < 3:
+    dx, dy = STEP[player.direction]
+    x = player.x // 8 + dx
+    y = player.y // 8 + dy
+    block_type = tile(x, y)
+    if block_type < 3:
         return
-    dahinter = feld(x + dx, y + dy)
+    beyond = tile(x + dx, y + dy)
 
-    if blocktyp in [KIRSCHBLOCK, APFELBLOCK] and dahinter == LEER:
-        spiel.schiebe_art = 40 if blocktyp == KIRSCHBLOCK else 0
-        block = objekte[7]
+    if block_type in [CHERRY_BLOCK, APPLE_BLOCK] and beyond == EMPTY:
+        game.sliding_type = 40 if block_type == CHERRY_BLOCK else 0
+        block = objects[7]
         block.x, block.y = x * 8, y * 8
         block.dx, block.dy = dx, dy
-        block.richtung = spieler.richtung
-        block.aktiv = True
-        setze_feld(x, y, LEER)
-    elif blocktyp == KIRSCHBLOCK and dahinter != LEER:
-        # Gegen ein Hindernis gedrückt: Kirschblock zerbricht statt zu rutschen.
-        zeichne_festes_objekt(x, y, KIRSCHBLOCK)
-        zerbrechen.x, zerbrechen.y = x, y
-        zerbrechen.restzeit = 32
-        starte_sound(frequenz=16, aenderung=32, dauer=6)
-        addiere_punkte(25)
-    # APFEL, WAND_6, WAND_7 und blockierter APFELBLOCK bleiben unverändert.
-    # In normalen Leveln kann dieselbe Feuer-Eingabe auch einen Schuss auslösen.
+        block.direction = player.direction
+        block.active = True
+        set_tile(x, y, EMPTY)
+    elif block_type == CHERRY_BLOCK and beyond != EMPTY:
+        # Pushed against an obstacle: the cherry block breaks instead of sliding.
+        draw_stationary_object(x, y, CHERRY_BLOCK)
+        breaking.x, breaking.y = x, y
+        breaking.time_left = 32
+        start_sound(frequency=16, change=32, duration=6)
+        add_points(25)
+    # APPLE, WALL_6, WALL_7 and a blocked APPLE_BLOCK remain unchanged.
+    # On normal levels the same fire input can also launch a shot.
 
 
-def beende_schiebebewegung_wenn_noetig():  # $2400
-    block = objekte[7]
-    if not block.aktiv or block.x % 8 != 0 or block.y % 8 != 0:
+def finish_sliding_if_blocked():  # $2400
+    block = objects[7]
+    if not block.active or block.x % 8 != 0 or block.y % 8 != 0:
         return
     x, y = block.x // 8, block.y // 8
-    if feld(x + block.dx, y + block.dy) == LEER:
-        return                     # Rutscht weiter, bis ein Hindernis kommt.
-    block.aktiv = False
+    if tile(x + block.dx, y + block.dy) == EMPTY:
+        return                     # Keeps sliding until it reaches an obstacle.
+    block.active = False
     block.dx = block.dy = 0
-    typ = APFELBLOCK if spiel.schiebe_art == 0 else KIRSCHBLOCK
-    setze_feld(x, y, typ)
-    zeichne_festes_objekt(x, y, typ)
-    spiele_abprallton()
+    tile_type = APPLE_BLOCK if game.sliding_type == 0 else CHERRY_BLOCK
+    set_tile(x, y, tile_type)
+    draw_stationary_object(x, y, tile_type)
+    play_bounce_sound()
 
 
-def zerbrechen_tick():              # $2470
-    if zerbrechen.restzeit == 0:
+def breaking_tick():              # $2470
+    if breaking.time_left == 0:
         return
-    zerbrechen.restzeit -= 1
-    if zerbrechen.restzeit == 0:
-        setze_feld(zerbrechen.x, zerbrechen.y, LEER)
-        loesche_die_vier_bildzeichen_des_blocks()
-    elif zerbrechen.restzeit % 8 == 7:
-        phase = 3 - zerbrechen.restzeit // 8
-        zeichne_zerbrechphase(phase)  # Zeichen $30..$3F, vier Phasen.
+    breaking.time_left -= 1
+    if breaking.time_left == 0:
+        set_tile(breaking.x, breaking.y, EMPTY)
+        erase_four_block_characters()
+    elif breaking.time_left % 8 == 7:
+        phase = 3 - breaking.time_left // 8
+        draw_breaking_frame(phase)  # Characters $30..$3F; four animation frames.
 
 
 # ---------------------------------------------------------------------------
-# 8. LEVELZIELE UND WECHSEL
+# 8. LEVEL GOALS AND TRANSITIONS
 # ---------------------------------------------------------------------------
 
-def pruefe_karten_ziel():           # $2BF0..$2C8E
-    if spieler.x % 8 != 0 or spieler.y % 8 != 0:
-        return                     # Ziele nur an Feldgrenzen prüfen.
+def check_map_goal():           # $2BF0..$2C8E
+    if player.x % 8 != 0 or player.y % 8 != 0:
+        return                     # Check goals only at tile boundaries.
 
-    if spiel.modus == 2:
-        fertig = keine_kirschen_mehr()
-    elif spiel.modus == 4:
-        # Es zählen wirklich sechs Äpfel auf der UNTERSTEN Kartenzeile.
-        # Die genaue Bitmaske akzeptiert auch Typ 7; im regulären Sammellevel
-        # entsteht das Ziel durch die sechs fallenden Äpfel (Typ 3).
-        fertig = (keine_kirschen_mehr()
-                  and sum((feld(x, 11) & 3) == 3 for x in range(16)) == 6)
-    elif spiel.modus == 6:
-        # Exakte Originalprüfung: bitweises UND der vier Eckfelder.
-        # Die beabsichtigte Bedeutung ist: vier Apfelblöcke in den Ecken.
-        # Typ 7 würde dieses UND zusammen mit Typ 5 ebenfalls bestehen.
-        fertig = (feld(0, 0) & feld(0, 11) & feld(15, 0) & feld(15, 11)) == 5
+    if game.mode == 2:
+        complete = no_cherries_left()
+    elif game.mode == 4:
+        # The check really counts six apples on the BOTTOM map row.
+        # The exact bitmask also accepts type 7; in a normal collection level,
+        # the six falling apples (type 3) satisfy this condition.
+        complete = (no_cherries_left()
+                  and sum((tile(x, 11) & 3) == 3 for x in range(16)) == 6)
+    elif game.mode == 6:
+        # Exact original check: bitwise AND of the four corner tiles.
+        # The intended meaning is: four apple blocks in the corners.
+        # Type 7 mixed with type 5 would also pass this AND test.
+        complete = (tile(0, 0) & tile(0, 11) & tile(15, 0) & tile(15, 11)) == 5
     else:
         return
 
-    if fertig:
-        runde_mit_kartenziel_beenden()
+    if complete:
+        finish_round_by_map_goal()
 
 
-def keine_kirschen_mehr():          # Original scannt alle 96 Bytes halbbyteweise.
-    return all(feld(x, y) != KIRSCHE for y in range(12) for x in range(16))
+def no_cherries_left():          # The original scans all 96 bytes nibble by nibble.
+    return all(tile(x, y) != CHERRY for y in range(12) for x in range(16))
 
 
-def pruefe_alle_gegner_beseitigt():  # $1E34
-    if spiel.nachschub == 0 and all(
-        not g.aktiv and g.spawn_countdown == 255 for g in gegner[1:6]
+def check_all_enemies_defeated():  # $1E34
+    if game.reserves == 0 and all(
+        not g.active and g.spawn_countdown == 255 for g in enemies[1:6]
     ):
-        starte_levelwechsel()
-    # Zweiter Weg zum nächsten Level! Keine Kirschen-/Eckprüfung nötig.
-    # Hier wird nur der Restbonus gutgeschrieben, nicht der zusätzliche
-    # Kartenziel-Bonus aus runde_mit_kartenziel_beenden().
+        start_round_transition()
+    # Another route to the next level! No cherry/corner check is required.
+    # Only the remaining bonus is awarded here, without the additional map-goal
+    # bonus from finish_round_by_map_goal().
 
 
-def runde_mit_kartenziel_beenden():  # $1AA8
-    starte_levelwechsel()
-    zusatz = spiel.karten_index + 1
-    if zusatz >= 4:
-        zusatz -= 3
-    addiere_punkte(zusatz * 1000)   # Also 1000, 2000, 3000, dann Wiederholung.
+def finish_round_by_map_goal():  # $1AA8
+    start_round_transition()
+    extra = game.map_index + 1
+    if extra >= 4:
+        extra -= 3
+    add_points(extra * 1000)   # Thus 1000, 2000, 3000, then repeat.
 
 
-def starte_levelwechsel():         # $2C60 + $1A84
-    spiel.uebergang = 224
-    spiel.modus += 1               # 2->3, 4->5, 6->1
-    if spiel.modus == 7:
-        spiel.modus = 1
-    addiere_punkte(spiel.bonus)    # Noch vorhandenen Bonus sofort gutschreiben.
-    # Im Übergang wird bei Countdown 128 die nächste Karte geladen.
-    # Die sechs Karten wiederholen sich, Gegner-Tempo/Nachschub steigen weiter.
+def start_round_transition():         # $2C60 + $1A84
+    game.transition = 224
+    game.mode += 1               # 2->3, 4->5, 6->1
+    if game.mode == 7:
+        game.mode = 1
+    add_points(game.bonus)    # Award the remaining bonus immediately.
+    # The next map is loaded when the transition countdown reaches 128.
+    # The six maps repeat; enemy speed and reserves keep increasing.
 
 
 # ---------------------------------------------------------------------------
-# 9. PUNKTE, BONUS, UHR UND HIGHSCORE
+# 9. SCORE, BONUS, CLOCK AND HIGH SCORES
 # ---------------------------------------------------------------------------
 
-def addiere_punkte(anzahl):         # $1AC0
-    spiel.punkte = (spiel.punkte + anzahl) % 100000
-    # Im Original: Ziffernzeichen direkt im Bildschirm-RAM addieren.
-    # Zeichen $1C..$25 entsprechen 0..9. Ab $26 Übertrag nach links.
-    # Es gibt hier keinen belegten Extraleben-Mechanismus.
+def add_points(count):         # $1AC0
+    game.score = (game.score + count) % 100000
+    # Original: add digit characters directly in screen RAM.
+    # Characters $1C..$25 mean 0..9. At $26 carry to the digit on the left.
+    # No extra-life mechanism is established here.
 
 
 def bonus_tick():                   # $1A00
-    spiel.bonus_halbtakt ^= 1
-    if spiel.bonus_halbtakt != 0:
+    game.bonus_half_tick ^= 1
+    if game.bonus_half_tick != 0:
         return
-    spiel.bonus = (spiel.bonus - 1) % 1000
-    if spiel.bonus == 0:
-        starte_tod()
-    # Bonus ist zugleich ein Zeitlimit. Sein Tempo hängt am Gegner-Takt.
+    game.bonus = (game.bonus - 1) % 1000
+    if game.bonus == 0:
+        start_death()
+    # The bonus also acts as a time limit. Its pace follows the enemy clock.
 
 
-def aktualisiere_uhr():             # $1A38
-    spiel.uhr_teiltakt += 1
-    if spiel.uhr_teiltakt == 60:
-        spiel.uhr_teiltakt = 0
-        spiel.uhr = erhoehe_mm_ss_anzeige(spiel.uhr)
-    # Das Original zählt 60 Spiel-Ticks pro angezeigter Sekunde.
-    # Das muss auf PAL nicht einer realen Sekunde entsprechen.
-    # Die Minuten-Zehnerstelle läuft schon nach 5 wieder auf 0: Zyklus 60 min.
-    # Während Übergängen, Todesablauf und Startbild steht diese Uhr still.
+def update_clock():             # $1A38
+    game.clock_subtick += 1
+    if game.clock_subtick == 60:
+        game.clock_subtick = 0
+        game.clock = increment_mm_ss_display(game.clock)
+    # The original counts 60 game ticks per displayed second.
+    # On PAL this need not correspond to a real second.
+    # The minutes tens digit wraps after 5: a 60-minute cycle.
+    # This clock stops during transitions, death and the title screen.
 
 
-def aktualisiere_highscore():       # $20FA..$21BE
-    # Acht Einträge, nur fünfstellige Punktzahlen, keine Namenseingabe.
-    # Die Tabelle liegt direkt in der rechten Bildschirmspalte.
-    # Eine laufende Partie kann sich schon während des Spielens einsortieren.
-    platz = spiel.highscore_platz
-    while platz > 0 and spiel.punkte > highscore[platz - 1]:
-        if platz < 8:
-            highscore[platz] = highscore[platz - 1]
-        platz -= 1
-    spiel.highscore_platz = platz
-    if platz < 8:
-        highscore[platz] = spiel.punkte
-        markiere_eigenen_eintrag_mit_wechselnder_farbe(spiel.tick)
-    # VEREINFACHT: Original vergleicht und verschiebt die Ziffern einzeln.
-    # Tabelleninhalt bleibt zwischen Partien im RAM; kein Speichern auf Disk.
+def update_highscore():       # $20FA..$21BE
+    # Eight entries, five-digit scores only, no name entry.
+    # The table sits directly in the right-hand screen column.
+    # An ongoing game can move up the table while being played.
+    rank = game.highscore_rank
+    while rank > 0 and game.score > highscore[rank - 1]:
+        if rank < 8:
+            highscore[rank] = highscore[rank - 1]
+        rank -= 1
+    game.highscore_rank = rank
+    if rank < 8:
+        highscore[rank] = game.score
+        highlight_own_entry_with_cycling_color(game.tick)
+    # SIMPLIFIED: the original compares and shifts individual digits.
+    # The table stays in RAM between games; it is not saved to disk.
 
 
 # ---------------------------------------------------------------------------
-# 10. SPIELERTOD UND GAME OVER
+# 10. PLAYER DEATH AND GAME OVER
 # ---------------------------------------------------------------------------
 
-def pruefe_spieler_getroffen():     # $1E50..$1EC0
-    for objekt in objekte[5::-1]:
-        if objekt.aktiv and nahe(objekt, spieler, grenze=4):
-            starte_tod()
+def check_player_hit():     # $1E50..$1EC0
+    for object in objects[5::-1]:
+        if object.active and near(object, player, threshold=4):
+            start_death()
             return
-    for g in gegner[5:0:-1]:
-        if g.aktiv and nahe(g, spieler, grenze=4):
-            starte_tod()
+    for g in enemies[5:0:-1]:
+        if g.active and near(g, player, threshold=4):
+            start_death()
             return
-    # Geschobener Block in Slot 7 ist in dieser Spielerprüfung nicht enthalten.
+    # The pushed block in slot 7 is excluded from this player-hit check.
 
 
-def starte_tod():                   # $1BDC sowie die Aufrufer
-    spiel.modus |= 128
-    spiel.tod_pause = 192
-    if schuss.status == 192:
-        loesche_schusszeichen_an_alter_position()
-    # In $1BDC gibt es noch einen Vergleich mit Modus 6, nachdem Bit 7 bereits
-    # gesetzt wurde; der Vergleich kann dann nicht mehr zutreffen.
+def start_death():                   # $1BDC and its callers
+    game.mode |= 128
+    game.death_pause = 192
+    if shot.status == 192:
+        erase_shot_at_old_position()
+    # $1BDC also compares the mode with 6 after bit 7 has already been set;
+    # the comparison can no longer succeed at that point.
 
 
-def tod_tick():                     # $1F00
-    if spiel.tod_pause != 0:
-        spiel.tod_pause -= 1
-        spiele_todeseffekt_falls_noetig(spiel.tod_pause)
+def death_tick():                     # $1F00
+    if game.death_pause != 0:
+        game.death_pause -= 1
+        play_death_effect_if_needed(game.death_pause)
         return
-    spiel.leben -= 1
-    if spiel.leben == 0:
-        spiel.modus = 7
-        spiel.tod_pause = 192
+    game.lives -= 1
+    if game.lives == 0:
+        game.mode = 7
+        game.death_pause = 192
     else:
-        setze_figuren_und_effekte_zurueck()
-        spiel.modus &= 127
-    # Erhalten bleiben u.a.: Karte, Punkte, Levelnummer, Uhr, Nachschubbudget.
-    # Der Bonus und die fünf regulären Spawn-Zähler werden neu initialisiert.
+        reset_figures_and_effects()
+        game.mode &= 127
+    # Preserved: map, score, round number, clock, reserves budget, among others.
+    # The bonus and the five regular spawn counters are reinitialized.
 
 
 def game_over_tick():               # $1B40
-    if spiel.tod_pause == 0:
-        spiel.modus = 0
-        musik.teiltakt = musik.position = 255
-        musik.durchlaeufe = 0
+    if game.death_pause == 0:
+        game.mode = 0
+        music.subtick = music.position = 255
+        music.loops = 0
         return
-    spiel.tod_pause -= 1
-    if spiel.tod_pause == 160:
-        zeichne_game_over_text()    # Daten $34A0, Bildbereich um $0D48.
-    spiele_game_over_melodie_falls_noetig(spiel.tod_pause)
-    # VEREINFACHT: Original setzt hier beim Rückweg auch den CPU-Stack zurück
-    # und springt direkt in die Startbild-Initialisierung bei $204A.
+    game.death_pause -= 1
+    if game.death_pause == 160:
+        draw_game_over_text()    # Data at $34A0, screen area around $0D48.
+    play_game_over_tune_if_needed(game.death_pause)
+    # SIMPLIFIED: on returning, the original also resets the CPU stack and
+    # jumps directly to title initialization at $204A.
 
 
 # ---------------------------------------------------------------------------
-# 11. DARSTELLUNG: ZEICHENGRAFIK STATT HARDWARE-SPRITES
+# 11. RENDERING: CHARACTER GRAPHICS INSTEAD OF HARDWARE SPRITES
 # ---------------------------------------------------------------------------
 
-def entferne_alte_figuren():        # $30A0
-    for eintrag in zeichnen.alte_eintraege:
-        bildschirm[eintrag.adresse] = LEERES_ZEICHEN
-    zeichnen.neue_eintraege = []
-    # Keine vollständige Bildschirm-Neuzeichnung und kein Hintergrund-Backup
-    # für jede Figur. Gelöschte Figurzeichen hinterlassen leeren Boden.
+def erase_old_figures():        # $30A0
+    for entry in drawing.old_entries:
+        screen[entry.address] = BLANK_CHARACTER
+    drawing.new_entries = []
+    # No full-screen redraw and no background backup per figure.
+    # Erased figure characters leave empty ground behind.
 
 
-def sammle_figuren_zum_zeichnen():  # $3000, $3090; VEREINFACHT
-    for figur in reversed(figuren[0:6]):
-        if not figur.aktiv:
+def queue_figures_for_drawing():  # $3000, $3090; SIMPLIFIED
+    for figure in reversed(figures[0:6]):
+        if not figure.active:
             continue
-        zelle_x, zelle_y = figur.x // 4, figur.y // 4
-        # Je nach Richtung und Unterposition unterschiedliche Zeichengruppen.
-        # Links/rechts haben getrennte Bilder; oben/unten teilen sich Bilder.
-        phase = unterposition_fuer_animation(figur)
-        grafik = figuren_grafiktabelle[figur.richtung, phase]
-        if figur is not spieler:
-            grafik = verschiebe_zeichennummern(grafik, um=30)
-        fuege_grafik_zur_zeichenliste(grafik, zelle_x, zelle_y, farbe=0x79)
-    # Adresstabellen $1850/$1868 vermeiden Multiplikation mit 40 pro Zeile.
-    # Eigentliche Grafiktabellen: $3E80..$3EC7.
+        cell_x, cell_y = figure.x // 4, figure.y // 4
+        # Different character groups depend on direction and subposition.
+        # Left/right have separate images; up/down share images.
+        phase = animation_subposition(figure)
+        graphic = figure_graphics_table[figure.direction, phase]
+        if figure is not player:
+            graphic = offset_character_codes(graphic, by=30)
+        append_graphic_to_draw_list(graphic, cell_x, cell_y, color=0x79)
+    # Address tables $1850/$1868 avoid multiplying every row by 40.
+    # Actual graphics tables: $3E80..$3EC7.
 
 
-def sammle_objekte_zum_zeichnen():  # $3200, $3290, $32A2; VEREINFACHT
-    for i, objekt in reversed(list(enumerate(objekte))):
-        if not objekt.aktiv:
+def queue_objects_for_drawing():  # $3200, $3290, $32A2; SIMPLIFIED
+    for i, object in reversed(list(enumerate(objects))):
+        if not object.active:
             continue
-        grafik = objekt_grafiktabelle[objekt.richtung, unterposition(objekt)]
+        graphic = object_graphics_table[object.direction, subposition(object)]
         if i == 7:
-            grafik = verschiebe_zeichennummern(grafik, um=spiel.schiebe_art)
-        farbe = 0x5A if spiel.modus == 6 else 0x08
-        fuege_grafik_zur_zeichenliste(grafik, objekt.x // 4, objekt.y // 4, farbe)
-    # Tabellen $3400..$3467; Einträge für glattes Verschieben über Zeichengrenzen.
+            graphic = offset_character_codes(graphic, by=game.sliding_type)
+        color = 0x5A if game.mode == 6 else 0x08
+        append_graphic_to_draw_list(graphic, object.x // 4, object.y // 4, color)
+    # Tables $3400..$3467: entries for smooth movement across character boundaries.
 
 
-def zeichne_gesammelte_zeichen():   # $30C0
-    for eintrag in zeichnen.neue_eintraege:
-        bildschirm[eintrag.adresse] = eintrag.zeichen
-        farbspeicher[eintrag.adresse - 0x0400] = eintrag.farbe
-    zeichnen.alte_eintraege = zeichnen.neue_eintraege
-    # Original hält getrennte Arrays: Adress-Low $0380, -High $03D0,
-    # Zeichen $0420, Farbe $0470. Hier ein lesbarer Eintrag pro Zeichen.
+def draw_queued_characters():   # $30C0
+    for entry in drawing.new_entries:
+        screen[entry.address] = entry.character
+        color_memory[entry.address - 0x0400] = entry.color
+    drawing.old_entries = drawing.new_entries
+    # The original uses separate arrays: address low $0380, high $03D0,
+    # character $0420, color $0470. Here, one readable entry per character.
 
 
-def zeichne_festes_objekt(x, y, typ):  # $33AC/$33B0, $2500
-    erster_code = 0x40 if typ in [APFEL, APFELBLOCK] else 0x68
-    zeichne_2x2_zeichen(x * 2, y * 2, [erster_code + i for i in range(4)])
-    fuelle_2x2_farben(x * 2, y * 2, 0x5A if spiel.modus == 6 else 0x08)
+def draw_stationary_object(x, y, tile_type):  # $33AC/$33B0, $2500
+    first_code = 0x40 if tile_type in [APPLE, APPLE_BLOCK] else 0x68
+    draw_2x2_characters(x * 2, y * 2, [first_code + i for i in range(4)])
+    fill_2x2_colors(x * 2, y * 2, 0x5A if game.mode == 6 else 0x08)
 
 
-def animiere_gegnerausgang():       # $1FA0
-    zeichne_2x2_zeichen(14, 12, [0x1B] * 4)
-    grundfarbe = 0x0E if any(g.spawn_countdown < 50 for g in gegner[1:6]) else 0x0A
-    fuelle_2x2_farben(14, 12, grundfarbe | ((spiel.tick & 7) << 4))
-    # INTERPRETIERT: Das farblich animierte Quadrat ist der Gegnerausgang.
-    # Die Spawnposition der Gegner liegt genau bei x=56,y=48.
+def animate_enemy_exit():       # $1FA0
+    draw_2x2_characters(14, 12, [0x1B] * 4)
+    base_color = 0x0E if any(g.spawn_countdown < 50 for g in enemies[1:6]) else 0x0A
+    fill_2x2_colors(14, 12, base_color | ((game.tick & 7) << 4))
+    # INFERRED: the color-animated square is the enemy exit.
+    # Enemies spawn exactly at x=56,y=48.
 
 
 # ---------------------------------------------------------------------------
-# 12. MUSIK UND SOUNDEFFEKTE
+# 12. MUSIC AND SOUND EFFECTS
 # ---------------------------------------------------------------------------
 
-def spiele_titelmusik():            # $2B00; VEREINFACHT
-    musik.teiltakt = (musik.teiltakt + 1) % 256
-    if musik.teiltakt == 8:
-        musik.teiltakt = 0
-        musik.position = (musik.position + 1) % 256
-        if musik.position == 192:
-            musik.position = 0
-            musik.durchlaeufe += 1
-        notenpaar = speicher[0x3F00 + musik.position]
-        stimme_1, stimme_2 = notenpaar >> 4, notenpaar & 15
-        if stimme_1 != 1:          # Wert 1 hält die vorige Frequenz.
-            ton.setze_stimme_1(nachschlagen_frequenz_1(stimme_1))
-        ton.setze_stimme_2(nachschlagen_frequenz_2(stimme_2))
-        ton.aktiviere_beide_stimmen()
-    elif musik.teiltakt == 7:
-        # Kurze Unterbrechung zwischen aufeinanderfolgenden Noten.
-        schalte_stimmen_vor_naechster_note_passend_ab()
-    # Zwei Noten in einem Byte, 192 Schritte, Notentabellen $3FC0..$3FFF.
-    # Achtung: Tabellenzugriff $3FF0+15 liegt ein Byte außerhalb der Datei.
-    # Ob dieser Eintrag tatsächlich benötigt wird, ist damit nicht gesagt.
-    # Die Datei lädt nur bis einschließlich $3FFE.
+def play_title_music():            # $2B00; SIMPLIFIED
+    music.subtick = (music.subtick + 1) % 256
+    if music.subtick == 8:
+        music.subtick = 0
+        music.position = (music.position + 1) % 256
+        if music.position == 192:
+            music.position = 0
+            music.loops += 1
+        note_pair = memory[0x3F00 + music.position]
+        voice_1, voice_2 = note_pair >> 4, note_pair & 15
+        if voice_1 != 1:          # Value 1 keeps the previous frequency.
+            audio.set_voice_1(lookup_frequency_1(voice_1))
+        audio.set_voice_2(lookup_frequency_2(voice_2))
+        audio.enable_both_voices()
+    elif music.subtick == 7:
+        # Brief interruption between successive notes.
+        silence_voices_before_next_note()
+    # Two notes per byte, 192 steps, note tables $3FC0..$3FFF.
+    # Note: table access $3FF0+15 lies one byte beyond the end of the file.
+    # This does not establish whether that entry is actually needed.
+    # The file loads only through $3FFE inclusive.
 
 
-def begleite_spiel_mit_musik():      # $1780..$17F2
-    if musik_taste_ist_nicht_aktiv():
-        ton.stimme_1_aus()
+def play_in_game_music():      # $1780..$17F2
+    if music_key_is_not_active():
+        audio.voice_1_off()
         return
-    # Ähnliche 8-Tick-Sequenz wie im Titel, aber nur die obere Notenhälfte.
-    # Die zweite Stimme bleibt für kurze Spielgeräusche verfügbar.
-    spiele_naechsten_schritt_der_ersten_stimme()
+    # An 8-tick sequence similar to the title, but using only the upper note nibble.
+    # The second voice remains available for short game sound effects.
+    play_next_step_of_first_voice()
 
 
-def starte_sound(frequenz, aenderung, dauer):
-    sfx.frequenz = frequenz % 256
-    sfx.aenderung = aenderung % 256
-    sfx.dauer = dauer
+def start_sound(frequency, change, duration):
+    sfx.frequency = frequency % 256
+    sfx.change = change % 256
+    sfx.duration = duration
 
 
-def soundeffekt_tick():             # $2560, $25A0
-    if sfx.kurztonpause != 0:
-        sfx.kurztonpause -= 1
+def sound_effect_tick():             # $2560, $25A0
+    if sfx.short_tone_pause != 0:
+        sfx.short_tone_pause -= 1
         return
-    if sfx.dauer == 0:
-        ton.stimme_2_aus()
+    if sfx.duration == 0:
+        audio.voice_2_off()
         return
-    sfx.frequenz = (sfx.frequenz + sfx.aenderung) % 256
-    ton.setze_stimme_2(sfx.frequenz, obere_bits=3)
-    ton.stimme_2_an()
-    sfx.dauer -= 1
+    sfx.frequency = (sfx.frequency + sfx.change) % 256
+    audio.set_voice_2(sfx.frequency, high_bits=3)
+    audio.voice_2_on()
+    sfx.duration -= 1
 
 
-def spiele_abprallton():            # $25E0 bzw. $25F8
-    ton.setze_stimme_2(240, obere_bits=3)
-    ton.stimme_2_an()
-    sfx.kurztonpause = 1
-    # Objekt-Aufprall benutzt eine Variante mit oberen Frequenzbits=0.
+def play_bounce_sound():            # $25E0 or $25F8
+    audio.set_voice_2(240, high_bits=3)
+    audio.voice_2_on()
+    sfx.short_tone_pause = 1
+    # Object impact uses a variant with high frequency bits=0.
 
 
 # ---------------------------------------------------------------------------
-# 13. WAS DIESE REKONSTRUKTION LEISTET UND WO SIE ENDET
+# 13. SCOPE AND LIMITS OF THIS RECONSTRUCTION
 # ---------------------------------------------------------------------------
-# Belegt und in isolierten ORIGINAL-Maschinencode-Routinen überprüft:
-#   - Kartenformat, alle 1152 Spielfelder und Lesen außerhalb der Karte
-#   - Schreiben eines Feldes ohne Änderung seines Nachbar-Halbbytes
-#   - Richtungsnummern und Priorität gleichzeitiger Eingaben
-#   - 25/100/250 Punkte und dezimaler Übertrag bis zum fünfstelligen Überlauf
-#   - 24-Bit-Zufallsfortschaltung und Laden aller sechs Karten
-#   - Anfangszustände aller sechs Karten und alle drei Kartenzielprüfungen
-#   - Auffälliger Rücksprung beim Falltimer, isoliert mit Restzeit 2
-# Prüfwerkzeug: python3 tools/verify_analysis.py
+# Established and checked in isolated ORIGINAL machine-code routines:
+#   - Map format, all 1152 playable tiles and reads outside the map
+#   - Writing a tile without changing its neighboring nibble
+#   - Direction numbers and simultaneous-input priority
+#   - 25/100/250 points and decimal carry through five-digit overflow
+#   - 24-bit random-state updates and loading all six maps
+#   - Initial states of all six maps and all three map-goal checks
+#   - Unusual fall-timer return, isolated with remaining delay 2
+# Verification tool: python3 tools/verify_analysis.py
 #
-# Aus statischer Analyse abgeleitet, aber NICHT im vollständigen Emulatorlauf
-# bestätigt: Interrupt-Zeitverhalten, Darstellung, Hardwareeingabe, Sound,
-# Fallverzögerung, alle Wechselwirkungen über ganze Partien.
+# Derived from static analysis, but NOT confirmed in a complete emulator run:
+# interrupt timing, rendering, hardware input, sound, fall delay,
+# and all interactions throughout entire games.
 #
-# Besonders offen: der unausgeglichene Stack-Pfad bei $2C90. Die vorliegende
-# Datei enthält zudem zahlreiche NOP-Blöcke. Ob und welche davon auf spätere
-# Änderungen zurückgehen, lässt sich ohne Vergleichsdatei nicht beweisen.
-# Diese Datei ist daher eine Rekonstruktion DIESER PRG, keine Behauptung über
-# den wortgetreuen ursprünglichen Quelltext von Shaun Southern.
+# Particularly unresolved: the unbalanced stack path at $2C90. This file also
+# contains numerous NOP blocks. Without a comparison file it cannot be proved
+# whether, or which of them, were introduced by later changes.
+# This is therefore a reconstruction of THIS PRG, not a claim to reproduce
+# Shaun Southern's original source code word for word.
 #
-# Bewusst abstrahiert:
-#   Hardware-Registerwerte, Zeichenlisten-Details und Melodien stehen hinter
-#   sprechenden Hilfsoperationen. Die Spiellogik oben ist weiter ausgearbeitet.
-#   Byte-Überläufe sind nur dort ausdrücklich dargestellt, wo sie besonders
-#   wichtig sind; Koordinaten/Index-Randfälle können vom Original abweichen.
+# Deliberately abstracted:
+# Hardware register values, character-list details and melodies are represented
+# by descriptive helper operations. The gameplay logic above is more detailed.
+# Byte overflows are explicit only where especially important; coordinate and
+# index boundary cases may differ from the original.
 #
-# Extrahierte Karten samt fester Apfelpositionen: analysis/levelkarten.txt.
-# Nachvollziehbare 6502-Befehle: analysis/disassembly.txt.
+# Extracted maps and fixed apple positions: analysis/level_maps.txt.
+# Traceable 6502 instructions: analysis/disassembly.txt.

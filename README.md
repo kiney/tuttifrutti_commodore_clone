@@ -1,138 +1,134 @@
-# Tutti Frutti – Commodore Plus/4 im Browser
+# Tutti Frutti – Commodore Plus/4 in the browser
 
+A fully client-side recreation of Shaun Southern's Commodore 16 / Plus/4 game.
+All six maps, the character set, figure graphics and melody data come from
+`tuttifrutti.prg`, included in this repository. The game interface and all
+repository artifacts are in English, regardless of the language used in chat.
 
-Ein vollständig clientseitiger Klon des Commodore-16-/Plus/4-Spiels von Shaun
-Southern. Alle sechs Karten, der Zeichensatz, Figurengrafiken und die
-Melodiedaten stammen aus der im Repository enthaltenen `tuttifrutti.prg`.
-Die gesamte Spieloberfläche ist auf Englisch, unabhängig von der Chatsprache.
+## Play and run locally
 
-## Spielen und lokal starten
+The complete website is in **[web/](web/)**. It uses no external JavaScript
+libraries, fonts, image services, CDNs, accounts or server APIs. No build or
+`npm install` is required to play.
 
-Die fertige Website liegt in **[web/](web/)**. Es gibt keine externen
-JavaScript-Bibliotheken, Fonts, Bilddienste, CDNs, Accounts oder Server-APIs.
-Ein Build und `npm install` sind zum Spielen nicht erforderlich.
-
-Aus dem Projektordner:
+From the project directory:
 
 ```sh
 python3 -m http.server 8000 --directory web
 ```
 
-Danach **http://localhost:8000** öffnen. Alternativ kann `web/index.html` direkt
-im Browser geöffnet werden; die klassischen Scripts benötigen weder `fetch`
-noch einen Modulserver. Ob der Browser lokale Highscores bei `file://`
-dauerhaft speichert, hängt von dessen Einstellungen ab.
+Then open **http://localhost:8000**. Alternatively, open `web/index.html`
+directly in your browser: the classic scripts require neither `fetch` nor a
+module server. Whether high scores persist when using `file://` depends on
+your browser's settings.
 
-## Auf einem statischen Webspace hosten
+## Deploy to static web hosting
 
-Den **Inhalt** von `web/` in ein beliebiges Verzeichnis des Webspace kopieren.
-`index.html` und die sieben anderen Dateien müssen nebeneinander liegen.
-Relative Assetpfade erlauben auch Unterverzeichnisse wie `/spiele/tutti/`.
-Es werden weder PHP noch Node.js, eine Datenbank, Rewrite-Regeln oder eine
-Internetverbindung nach dem Laden der Dateien benötigt.
+Copy the **contents** of `web/` into any directory on your web host.
+`index.html` and the other seven files must be in the same directory. Relative
+asset paths also support subdirectories such as `/games/tutti/`. No PHP,
+Node.js, database, rewrite rules or internet connection after loading the files
+is required.
 
-Optional ein fertiges Upload-Archiv erstellen:
+Optionally, create a ready-to-upload archive:
 
 ```sh
 python3 tools/package_web.py
 ```
 
-Das erzeugt **`dist/tutti-frutti-web.zip`** (derzeit etwa 23 kB). Auf dem Webspace entpacken; die
-Startdatei ist `index.html`. Die PRG, Analysewerkzeuge und Tests werden zum
-Spielen nicht mit hochgeladen.
+This creates **`dist/tutti-frutti-web.zip`**, currently about 23 kB. Extract it on
+your web host; the entry point is `index.html`. The PRG, analysis tools and tests
+do not need to be uploaded to play the game.
 
-## Steuerung
+## Controls
 
-| Aktion | Tastatur / Touch |
+| Action | Keyboard / touch |
 | --- | --- |
-| Starten / neue Partie | Enter, Leertaste oder Startknopf |
-| Bewegen | Pfeiltasten oder WASD; auf Touchgeräten Steuerkreuz |
-| Schießen | Leertaste oder F; auf Touchgeräten Feuer |
-| Schieben / Kirschblock zerbrechen | Feuer halten und in Richtung des Blocks steuern |
-| Pause / weiter | P, Escape oder Pauseknopf |
-| Ton an / aus | M oder Tonknopf |
-| Vollbild | Vollbildknopf, sofern vom Browser unterstützt |
+| Start / new game | Enter, Space or the Start button |
+| Move | Arrow keys or WASD; directional pad on touch devices |
+| Shoot | Space or F; Fire button on touch devices |
+| Push / break a cherry block | Hold Fire and steer toward the block |
+| Pause / resume | P, Escape or the Pause button |
+| Sound on / off | M or the Sound button |
+| Fullscreen | Fullscreen button, if supported by the browser |
 
-Audio startet erst nach einer Interaktion. Bei Fokusverlust oder Wechsel in
-einen anderen Tab pausiert die Partie. Die Highscores der letzten besten acht
-abgeschlossenen Partien und die Ton-Einstellung werden ausschließlich lokal
-im Browser gespeichert. Blockierter Browserspeicher verhindert das Spielen
-nicht. Eine Partie selbst wird nicht gespeichert.
+Audio starts after an interaction. The game pauses when the window loses focus
+or you switch tabs. The eight best scores from completed games and the sound
+setting are stored only in the local browser. Blocking browser storage does not
+prevent playing. A game in progress is not saved.
 
-## Spielumfang
+## Features
 
-- Fünf Leben, sechs wiederkehrende Originalkarten und steigendes Gegnertempo
-  samt Nachschub über weitere Runden.
-- Karten 1/4: alle Kirschen sammeln. Karten 2/5: zusätzlich sechs Äpfel auf die
-  unterste Zeile bringen. Karten 3/6: vier Apfelblöcke in die vier Ecken schieben.
-- Gegner durch bereits gegrabene Gänge, abprallender Schuss mit Rückkehr und
-  Aufladezeit, fallende Äpfel und bis zum Hindernis rutschende Blöcke.
-- Auch das Beseitigen aller Gegner samt Nachschub beendet eine Runde.
-- Punkte, Bonus-Zeitlimit, Lebensverlust, Rundenwechsel, Game Over und Neustart.
-- Canvas mit nativen 320 × 200 Pixeln und Original-Zeichengrafik, responsive
-  Oberfläche, Touch-Eingabe einschließlich gleichzeitiger Richtung und Feuer.
-- Original-Melodiefolge und lokal synthetisierte Geräusche über Web Audio.
+- Five lives, six repeating original maps, increasing enemy speed and additional
+  reinforcements in later rounds.
+- Maps 1/4: collect every cherry. Maps 2/5: also bring six apples to the bottom
+  row. Maps 3/6: push four apple blocks into the four corners.
+- Enemies move through excavated paths; the bouncing shot can be caught or
+  recharged; apples fall and pushed blocks slide until they hit an obstacle.
+- Defeating all enemies, including reinforcements, also completes a round.
+- Score, bonus time limit, life loss, round transitions, game over and replay.
+- Native 320 × 200 Canvas rendering with original character graphics, a
+  responsive interface, and touch controls supporting simultaneous direction
+  and Fire input.
+- Original melody sequence and locally synthesized effects using Web Audio.
 
-Die Regeln wurden aus dem disassemblierten Programm rekonstruiert. Dies ist
-kein 6502-/TED-Emulator: Palette und Klangerzeugung sind angenähert, nicht
-zyklengenau. Der auffällige Stack-Pfad im ursprünglichen Falltimer wurde durch
-eine reguläre Verzögerung ersetzt. Randkollisionen und das Zurücksetzen
-beweglicher Objekte nach einem Lebensverlust werden im Klon stabilisiert.
+The rules were reconstructed from the disassembled program. This is not a
+6502/TED emulator: the palette and sound generation are approximations rather
+than cycle-accurate emulation. The unusual stack path in the original fall timer
+has been replaced with a regular delay. Boundary collisions and resetting moving
+objects after losing a life are stabilized in the browser recreation.
 
-## Quelltext und Prüfungen
+## Source code and verification
 
-| Datei | Aufgabe |
+| File | Purpose |
 | --- | --- |
-| `web/engine.js` | Spiellogik ohne Browserabhängigkeit; feste 50 Ticks/s |
-| `web/renderer.js` | Zeichensatz, Figuren und Oberfläche im Canvas |
-| `web/audio.js` | Zwei lokal synthetisierte Tonstimmen |
-| `web/app.js` | Tastatur/Touch, DOM, Pause, Highscores und Animationsschleife |
-| `web/assets.js` | Aus der PRG extrahierte Karten, Grafik- und Musikdaten |
-| `tools/extract_web_assets.py` | Reproduzierbare Erzeugung der Asset-Datei |
+| `web/engine.js` | Browser-independent game logic; fixed 50 ticks/s |
+| `web/renderer.js` | Character set, figures and Canvas display |
+| `web/audio.js` | Two locally synthesized audio voices |
+| `web/app.js` | Keyboard/touch, DOM, pause, high scores and animation loop |
+| `web/assets.js` | Maps, graphics and music data extracted from the PRG |
+| `tools/extract_web_assets.py` | Reproducible asset-file generation |
 
-Tests benötigen nur Node.js 18+; es müssen keine npm-Pakete installiert werden:
+Tests require only Node.js 18+; no npm packages need to be installed:
 
 ```sh
 npm test
-# gleichwertig:
+# Equivalent:
 node tests/engine.test.cjs
 ```
 
-Die 14 Prüfungen umfassen den Abgleich mit den PRG-Daten, Spielerbewegung,
-Punkte, Schuss, Gegner, Fallen und Schieben, alle drei Levelziele, Kartenzyklus,
-Lebensverlust, Zeitlimit, komplette Laufwege durch beide Sammelkarten sowie
-längere deterministische Partien mit allen sechs Karten.
+The 14 checks cover comparison with the PRG data, player movement, score,
+projectiles, enemies, falling and pushing, all three level goals, map cycling,
+life loss, time limits, complete routes through both cherry-collection maps,
+and longer deterministic games on all six maps.
 
-`tests/browser-smoke.js` enthält zusätzlich eine im Browser ausführbare
-Testfunktion. Dazu die Seite mit `?debug=1` öffnen und die Funktion aus der Datei
-in den Browser-Entwicklerwerkzeugen aufrufen. Sie prüft echte DOM- und
-Animationseingaben, Pause/Hilfe, gleichzeitige Touch-Eingaben, Highscores,
-Neustart, Canvas und lokale Ressourcen. Geprüft in Chromium bei 1280 × 900,
-390 × 844 und 320 × 740 Pixeln, direkt per `file://`, unter einem HTTP-
-Unterverzeichnis aus dem entpackten ZIP sowie nach dem Laden ohne Netzwerk.
-Vollbild und die normale Ansicht ohne Debugparameter wurden ebenfalls geprüft.
-Der Debugzugriff und die manuelle
-Zeitschaltung sind ohne diesen URL-Parameter nicht aktiviert.
+`tests/browser-smoke.js` also contains a browser-executable test function.
+Open the page with `?debug=1` and invoke the function from that file in your
+browser's developer tools. It checks actual DOM and animation input, pause/help,
+simultaneous touch input, high scores, replay, Canvas and local resources.
+Verification covered Chromium at 1280 × 900, 390 × 844 and 320 × 740 pixels,
+direct `file://` access, an HTTP subdirectory serving the extracted ZIP, and
+playing without a network connection after loading. Fullscreen and the normal
+view without a debug parameter were also checked. Debug access and manual
+simulation timing are not enabled without that URL parameter.
 
+## License
 
-## license
-Original Tutti Frutti is from Mr. Chip published by Mastertronic.
-According to this interview with an ex Mastertronic executive those games are now basically free:
-https://www.lemon64.com/page/anthony-guter-interview
+The original Tutti Frutti is by Mr. Chip Software, published by Mastertronic.
+According to [this interview with a former Mastertronic executive](https://www.lemon64.com/page/anthony-guter-interview),
+those games are now basically free.
 
+## Readable reconstruction
 
-## Lesbare Rekonstruktion
+[pseudocode.py](pseudocode.py) explains the program in English, using Python-like
+pseudocode. It is intended for reading and is not an executable remake. Start
+with the data model, `start()`, `frame_tick()` and `play_one_tick()`. Original
+addresses and unresolved questions are included alongside the relevant code.
 
-[pseudocode.py](pseudocode.py) erklärt das Programm auf Deutsch in Python-artigem
-Pseudocode. Es ist zum Lesen gedacht und kein ausführbares Remake. Einstieg:
-Datenmodell, `start()`, `bild_tick()` und `spiele_einen_tick()`. Originaladressen
-und offene Fragen stehen jeweils dabei.
+- [Extracted level maps](analysis/level_maps.txt)
+- [Traced 6502 instructions](analysis/disassembly.txt), as a technical reference
 
-- [Extrahierte Levelkarten](analysis/levelkarten.txt)
-- [Nachverfolgte 6502-Befehle](analysis/disassembly.txt), als technische Referenz
-
-Die Analysewerkzeuge benötigen nur Python 3 und werden aus dem Projektordner
-aufgerufen:
+The analysis tools require only Python 3 and run from the project directory:
 
 ```sh
 python3 tools/extract_levels.py
@@ -140,6 +136,6 @@ python3 tools/trace_code.py
 python3 tools/verify_analysis.py
 ```
 
-Die Prüfungen führen ausgewählte Routinen aus der Originaldatei mit einem
-kleinen CPU-Runner aus. Sie ersetzen keinen vollständigen Plus/4-Emulatorlauf.
-Ein auffälliger Stack-Pfad im Falltimer ist im Pseudocode ausdrücklich markiert.
+The checks execute selected routines from the original file in a small CPU
+runner. They do not replace a complete Plus/4 emulator run. An unusual stack
+path in the fall timer is explicitly marked in the pseudocode.

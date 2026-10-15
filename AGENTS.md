@@ -1,11 +1,13 @@
 # Project instructions
 
-## Product language
+## Artifact language
 
-- All player-facing text in the game and its website must be in English, regardless of the language used in chat.
+- All project artifacts must be in English, regardless of the language used in chat. This includes the game, website, README, other documentation, pseudocode, source comments, explanatory identifiers, analysis reports, tool output, and generated files.
 - This includes menus, controls, instructions, mission descriptions, overlays, high scores, status messages, accessibility labels, fallback text, and page metadata.
 - Do not switch the product language to German when the user chats in German.
-- Conversation and repository documentation may remain in the user's preferred language unless requested otherwise.
+- Keep artifact filenames and references in English as well. Update generators so regenerated artifacts remain in English.
+- Preserve original binary/reference data byte-for-byte; translate the explanatory material around it.
+- Conversation may remain in the user's preferred language. German chat does not authorize German artifacts.
 
 ## Implementation
 
