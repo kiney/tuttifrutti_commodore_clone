@@ -9,9 +9,13 @@ files = ['index.html', 'styles.css', 'favicon.svg', 'assets.js', 'engine.js',
 for name in files:
     if not (web / name).is_file():
         raise SystemExit(f'Missing required runtime file: {name}')
+license_file = root / 'LICENSE'
+if not license_file.is_file():
+    raise SystemExit('Missing LICENSE: the upload archive must include the license scope notice')
 target = root / 'dist' / 'tutti-frutti-web.zip'
 target.parent.mkdir(exist_ok=True)
 with ZipFile(target, 'w', ZIP_DEFLATED, compresslevel=9) as bundle:
     for name in files:
         bundle.write(web / name, name)
-print(f'{target}: {target.stat().st_size:,} bytes, {len(files)} files')
+    bundle.write(license_file, 'LICENSE')
+print(f'{target}: {target.stat().st_size:,} bytes, {len(files) + 1} files')

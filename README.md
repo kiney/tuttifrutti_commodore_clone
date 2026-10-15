@@ -24,7 +24,8 @@ your browser's settings.
 
 ## Deploy to static web hosting
 
-Copy the **contents** of `web/` into any directory on your web host.
+Copy the **contents** of `web/` and the root **LICENSE** file into any directory
+on your web host.
 `index.html` and the other seven files must be in the same directory. Relative
 asset paths also support subdirectories such as `/games/tutti/`. No PHP,
 Node.js, database, rewrite rules or internet connection after loading the files
@@ -36,7 +37,7 @@ Optionally, create a ready-to-upload archive:
 python3 tools/package_web.py
 ```
 
-This creates **`dist/tutti-frutti-web.zip`**, currently about 23 kB. Extract it on
+This creates **`dist/tutti-frutti-web.zip`**, currently about 24 kB. Extract it on
 your web host; the entry point is `index.html`. The PRG, analysis tools and tests
 do not need to be uploaded to play the game.
 
@@ -114,9 +115,26 @@ simulation timing are not enabled without that URL parameter.
 
 ## License
 
-The original Tutti Frutti is by Mr. Chip Software, published by Mastertronic.
-According to [this interview with a former Mastertronic executive](https://www.lemon64.com/page/anthony-guter-interview),
-those games are now basically free.
+**Only the new, original code written for this project is licensed under the
+WTFPL version 2.** See [LICENSE](LICENSE) for the full license text and its scope.
+
+**The original game is explicitly excluded.** The WTFPL does not apply to
+`tuttifrutti.prg` or to original code, graphics, character sets, maps, music,
+and other original-derived material, including the extracted data in
+`web/assets.js`, disassemblies and reconstructed data reports. New code that
+loads, processes or displays those assets does not relicense them.
+
+The original Tutti Frutti is by Shaun Southern / Mr. Chip Software, published
+by Mastertronic in 1985. This repository includes and uses the original material
+on the basis of the historical statements in
+[Anthony Guter's June 22, 2002 interview](https://www.lemon64.com/page/anthony-guter-interview).
+Guter, Mastertronic's former Financial Controller, reports Magnetic Fields'
+renunciation of claims to its 8-bit titles and states that Mr. Chip Software
+titles may be freely used. This historical statement is separate from the
+WTFPL grant for the new code. The project does not claim ownership of, or grant
+a new license for, the original game or its assets.
+
+The upload archive includes the same LICENSE file and exclusions.
 
 ## Readable reconstruction
 

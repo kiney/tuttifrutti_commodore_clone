@@ -1,0 +1,61 @@
+LICENSE SCOPE — NEW CODE ONLY
+============================
+
+The WTFPL version 2 reproduced below applies ONLY to new, original source code
+written for this repository, to the extent that the project contributors hold
+the rights to that code. This includes the new browser implementation, website
+markup and styles, analysis and extraction tools, tests, and packaging code.
+
+THE ORIGINAL TUTTI FRUTTI GAME IS NOT LICENSED UNDER THE WTFPL BY THIS PROJECT.
+
+The WTFPL grant expressly EXCLUDES:
+
+- tuttifrutti.prg, the original Commodore 16 / Plus/4 game by Shaun Southern /
+  Mr. Chip Software, published by Mastertronic in 1985;
+- original game code, machine instructions, graphics, character sets, maps,
+  music, sound data, and any other original material, whether included in the
+  PRG or copied, extracted, disassembled, adapted, or embedded elsewhere;
+- in particular, the original-derived contents of web/assets.js (assets.js in
+  the browser distribution), analysis/disassembly.txt, analysis/level_maps.txt,
+  and any reproduced original code or data in the reconstruction artifacts.
+
+New code surrounding or processing excluded material does not relicense that
+material. Inclusion in this repository or in an upload archive does not place
+the original game or its assets under the WTFPL. Rights in excluded material
+remain with their respective rights holders; this project grants no license
+on their behalf.
+
+BASIS FOR INCLUDING AND USING THE ORIGINAL GAME
+==============================================
+
+The original game and original-derived material are included and used on the
+basis of the historical statements in Anthony Guter's interview with Lemon64,
+dated June 22, 2002. Guter was Mastertronic's Financial Controller from 1985 to
+1991. In the section "Who owns the rights to the classic Mastertronic titles?",
+he discusses the original authors' rights and reports that Magnetic Fields had
+renounced its claims to its 8-bit titles, concluding:
+
+  "so you can freely use any title produced by Mr. Chip Software."
+
+Source: https://www.lemon64.com/page/anthony-guter-interview
+
+This is the stated basis for this project's use of the original material. It
+is separate from the license for the new code. It is not a WTFPL license grant
+for the original game, nor a claim that this project owns the original rights.
+
+UNMODIFIED WTFPL VERSION 2 TEXT — APPLIES ONLY WITHIN THE SCOPE ABOVE
+==================================================================
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.

@@ -7,5 +7,6 @@
     "test": "node tests/engine.test.cjs",
     "build": "python3 tools/package_web.py",
     "serve": "python3 -m http.server 8000 --directory web"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE"
 }
