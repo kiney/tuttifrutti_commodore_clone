@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121a17">
+  <meta name="description" content="Tutti Frutti: play the 1985 Commodore classic in your browser. Six original maps, pixel graphics and chiptunes. Runs entirely in your browser.">
+  <title>Tutti Frutti · A little piece of 1985</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="assets.js"></script>
+  <script defer src="engine.js"></script>
+  <script defer src="renderer.js"></script>
+  <script defer src="audio.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="site-shell">
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="Tutti Frutti home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path fill="#a4c46d" d="M16 1h4v5h5v3h-5v6h-3V9h-5V6h4z"/><path fill="#e77561" d="M4 14h9v3h3v10h-3v3H4v-3H1V17h3zm16 1h8v3h3v9h-3v3h-8v-3h-3v-9h3z"/><path fill="#f7dca2" d="M5 17h3v4H5zm16 1h3v4h-3z"/></svg>
+        <span>TUTTI<span class="brand-second">FRUTTI</span></span>
+      </a>
+      <div class="edition"><span class="status-dot"></span> COMMODORE CLASSICS <span class="edition-year">/ 1985</span></div>
+    </header>
+
+    <main>
+      <div class="intro"><p class="eyebrow">MR. CHIP SOFTWARE · RECREATED FOR THE WEB</p><h1>A little piece of <span>1985.</span></h1><p>You, an orchard full of cherries, and the Acid Apple Gang.</p></div>
+      <div class="game-layout">
+        <section class="arcade" aria-label="Tutti Frutti arcade game">
+          <div class="machine-strip"><span><i></i> PLUS/4 <span class="strip-detail">· 16K ORIGINAL</span></span><span class="strip-right">SUPER STRAWBERRY IS BACK</span></div>
+          <div class="screen" id="screen">
+            <canvas id="game" width="320" height="200" tabindex="0" aria-label="Tutti Frutti game board. Move with the arrow keys or WASD. Press Space to shoot or push. Press P to pause.">Your browser must support Canvas to display the game.</canvas>
+            <div class="scanlines" aria-hidden="true"></div>
+            <div id="overlay" class="overlay">
+              <div class="overlay-content">
+                <p class="overlay-kicker" id="overlay-kicker">SIX MAPS. FIVE LIVES.</p>
+                <h2 id="overlay-title">FRESH FROM<br><span>THE ORCHARD.</span></h2>
+                <p id="overlay-description">Pick the cherries. Drop the apples.<br>And stay one step ahead of the gang.</p>
+                <button id="primary-action" class="button button-primary" type="button">Start game <span aria-hidden="true">↗</span></button>
+                <button id="restart-action" class="text-button" type="button" hidden>New game</button>
+                <p class="overlay-hint" id="overlay-hint">OR PRESS ENTER / SPACE</p>
+              </div>
+            </div>
+          </div>
+          <div class="machine-controls">
+            <div class="control-group"><button id="pause" class="control-button" type="button" disabled><span aria-hidden="true">Ⅱ</span> Pause <kbd>P</kbd></button><button id="sound" class="control-button" type="button" aria-pressed="true"><span aria-hidden="true">♪</span> Sound on <kbd>M</kbd></button></div>
+            <div class="control-group"><button id="fullscreen" class="control-button icon-control" type="button" aria-label="Fullscreen" title="Fullscreen"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button><button id="help" class="control-button" type="button">How to play <span aria-hidden="true">?</span></button></div>
+          </div>
+          <div class="touch-controls" aria-label="Touch controls">
+            <div class="dpad"><button class="pad up" data-input="up" aria-label="Move up" type="button">▲</button><button class="pad left" data-input="left" aria-label="Move left" type="button">◀</button><span class="pad-center" aria-hidden="true"></span><button class="pad right" data-input="right" aria-label="Move right" type="button">▶</button><button class="pad down" data-input="down" aria-label="Move down" type="button">▼</button></div>
+            <span class="touch-label">MOVE<br>+ FIRE</span>
+            <button class="fire-button" data-input="fire" aria-label="Shoot or push. Hold a direction at the same time to push." type="button">FIRE<span>HOLD TO PUSH</span></button>
+          </div>
+        </section>
+
+        <aside class="field-notes" aria-label="Game tips">
+          <div class="note-heading"><span class="eyebrow">YOUR MISSION</span><span class="round-tag" id="round-tag">01 / 06</span></div>
+          <h2 id="mission-title">Cherry picking.</h2><p id="mission-description">Dig your way through the orchard and collect every cherry.</p>
+          <div class="mission-progress"><span id="progress-label">Cherries</span><strong id="progress-value">0 / 32</strong><div class="progress-track"><span id="progress-bar"></span></div></div>
+          <div class="note-divider"></div>
+          <ul class="item-list"><li><canvas data-icon="2" aria-hidden="true"></canvas><span><strong>The sweet reward</strong><small>25 points per cherry</small></span></li><li><canvas data-icon="3" aria-hidden="true"></canvas><span><strong>Watch overhead</strong><small>Falling apples hit enemies too</small></span></li><li><canvas id="enemy-icon" aria-hidden="true"></canvas><span><strong>The Acid Apple Gang</strong><small>Keep moving</small></span></li></ul>
+          <div class="note-divider"></div>
+          <div class="keyboard-note"><div><span class="key-cluster"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span><span>Move · WASD works too</span></div><div><kbd class="space-key">SPACE</kbd><span>Shoot / Push</span></div></div>
+          <button id="scores" class="scores-link" type="button">Your high scores <span aria-hidden="true">↗</span></button>
+          <p class="local-note"><span class="status-dot"></span> Just your high scores.<br>Saved in this browser.</p>
+        </aside>
+      </div>
+      <p class="below-game"><span class="tiny-cherry" aria-hidden="true">●</span> Little fruit. Big feelings.<span class="below-right">NO DOWNLOAD · NO LOGIN · JUST PLAY</span></p>
+      <p class="sr-only" id="announcement" role="status" aria-live="polite"></p>
+    </main>
+
+    <footer><span>ORIGINAL: SHAUN SOUTHERN · MR. CHIP SOFTWARE / MASTERTRONIC, 1985</span><span>An unofficial browser remake with original graphics.</span></footer>
+  </div>
+  <dialog id="help-dialog" aria-labelledby="help-title">
+    <div class="dialog-header"><span class="eyebrow">BEFORE YOUR FIRST BITE</span><button class="close-button" data-close type="button" aria-label="Close instructions">×</button></div>
+    <h2 id="help-title">Welcome to the orchard.</h2>
+    <p>You are Super Strawberry. Dig paths, collect cherries, and dodge the green enemies. You start with five lives.</p>
+    <ol class="help-rules"><li><strong>Harvest time · Maps 1 &amp; 4</strong>Collect every cherry. Enemies can only move through paths you have already dug.</li><li><strong>Falling apples · Maps 2 &amp; 5</strong>Collect every cherry and bring all six apples down to the bottom row. Dig underneath them, then get out of the way.</li><li><strong>Block puzzle · Maps 3 &amp; 6</strong>Push four apple blocks into the four corners. Hold Fire and a direction. Cherry blocks break if there is no room behind them. Shooting is disabled on these maps.</li></ol>
+    <p><strong>Your shot</strong> bounces diagonally through open paths. Catch it again, or wait for it to recharge after a hit. A shot scores 100 points; falling apples normally score 250.</p>
+    <p>Defeating the entire gang, including reinforcements, also advances you to the next round. Your bonus counts down: at zero, you lose a life. After six maps, the cycle repeats at a faster pace.</p>
+    <div class="help-keys"><span><kbd>↑ ← ↓ →</kbd> / <kbd>WASD</kbd> Move</span><span><kbd>SPACE</kbd> / <kbd>F</kbd> Fire</span><span><kbd>P</kbd> Pause</span><span><kbd>M</kbd> Sound</span></div>
+    <button class="button button-primary" data-close type="button">Got it. Into the orchard.</button>
+  </dialog>
+  <dialog id="scores-dialog" aria-labelledby="scores-title"><div class="dialog-header"><span class="eyebrow">YOUR LITTLE CLAIM TO FAME</span><button class="close-button" data-close type="button" aria-label="Close high scores">×</button></div><h2 id="scores-title">The sweetest harvests.</h2><ol id="score-list" class="score-list"></ol><p class="muted">Scores from completed games are saved locally in this browser.</p><button class="button button-primary" data-close type="button">Back to the orchard</button></dialog>
+  <noscript><div class="noscript">Enable JavaScript to play. All game features run locally in your browser.</div></noscript>
+</body>
+</html>

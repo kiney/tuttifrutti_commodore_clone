@@ -1,0 +1,11 @@
+{
+  "name": "tutti-frutti-browser-clone",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dependency-free static browser recreation of the Commodore 16 / Plus 4 game",
+  "scripts": {
+    "test": "node tests/engine.test.cjs",
+    "build": "python3 tools/package_web.py",
+    "serve": "python3 -m http.server 8000 --directory web"
+  }
+}
